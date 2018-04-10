@@ -789,6 +789,19 @@
       ::  blocks: map from +dependency to all builds waiting for its retrieval
       ::
       blocks=(jug dependency build)
+      ::  next-builds: builds to perform in the next iteration
+      ::
+      next-builds=(set build)
+      ::  blocked builds: mappings between blocked and blocking builds
+      ::
+      $=  blocked-builds
+      $:  ::  sub-builds: key is client, value is sub-build
+          ::
+          sub-builds=(jug build build)
+          ::  client-builds: key is sub-build, value is client
+          ::
+          client-builds=(jug build build)
+      ==
   ::
   ::  build request tracking
   ::
@@ -893,6 +906,40 @@
       ::
       =beam
   ==
+::  +state-diff: changes to ford state made by a build
+::
++=  state-diff
+  $:  ::  build: the build we worked on
+      ::
+      =build
+      ::  result: the outcome of this build
+      ::
+      $=  result
+      $%  ::  %build-result: the build produced a result
+          ::
+          $:  %build-result
+              =build-result
+          ==
+          ::  %blocks: the build blocked on the following builds/dependency
+          ::
+          $:  %blocks
+              ::  builds: builds that :build blocked on
+              ::
+              builds=(list build)
+              ::  scry-blocked: dependency that :build blocked on
+              ::
+              scry-blocked=(unit dependency)
+          ==
+      ==
+      ::  sub-builds: subbuilds of :build
+      ::
+      ::    While running +make on :build, we need to keep track of any
+      ::    sub-builds that we try to access so we can keep track of
+      ::    component linkages and cache access times.
+      ::
+      sub-builds=(list build)
+  ==
+
 ::  +vane: short names for vanes
 ::
 ::    TODO: move to zuse
@@ -1448,7 +1495,29 @@
       ==
     ::  the build isn't complete, so try running +make on it
     ::
-    =^  made  ..execute  (make build)
+    =/  made  (make build)
+    ::  temp: update based on the sub-builds we saw.
+    ::
+    =.  state
+      %+  roll  sub-builds.made
+      |=  [sub-build=^build accumulator=_state]
+      =.  state  accumulator
+      ::
+      =^  maybe-cache-line  results.state  (access-cache sub-build)
+      ::
+      %_    state
+          builds-by-date
+        (~(put ju builds-by-date.state) date.build schematic.sub-build)
+      ::
+          builds-by-schematic
+        (~(put by-schematic builds-by-schematic.state) sub-build)
+      ::
+          sub-builds.components
+        (~(put ju sub-builds.components.state) build sub-build)
+      ::
+          client-builds.components
+        (~(put ju client-builds.components.state) sub-build build)
+      ==
     ::  dispatch on the product of +make
     ::
     ?-    -.result.made
@@ -1664,20 +1733,24 @@
   ::
   ++  make
     |=  =build
-    ^-  $:  ::  result: result of running a build
-            ::
-            $=  result
-            $%  ::  %build-result: the build completed
-                ::
-                [%build-result =build-result]
-                ::  %blocks: :build is waiting on other builds or a dependency
-                ::
-                [%blocks builds=(list ^build)]
-            ==
-            ::  possibly mutated version of the +per-event core
-            ::
-            _this
-        ==
+    ^-  state-diff
+    ::  ^-  $:  ::  result: result of running a build
+    ::          ::
+    ::          $=  result
+    ::          $%  ::  %build-result: the build completed
+    ::              ::
+    ::              [%build-result =build-result]
+    ::              ::  %blocks: :build is waiting on other builds or a dependency
+    ::              ::
+    ::              [%blocks builds=(list ^build)]
+    ::          ==
+    ::          ::  possibly mutated version of the +per-event core
+    ::          ::
+    ::          _this
+    ::      ==
+    ::  accessed-builds: builds accessed/depended on during this run.
+    ::
+    =|  accessed-builds=(list ^build)
     ::  dispatch based on the kind of +schematic in :build
     ::
     |^  ?-    -.schematic.build
@@ -1719,9 +1792,10 @@
     ::
     ++  autocons
       |=  [head=schematic tail=schematic]
+      ^-  state-diff
       ::
-      =^  head-result  state  (depend-on head)
-      =^  tail-result  state  (depend-on tail)
+      =^  head-result  accessed-builds  (nu-depend-on head)
+      =^  tail-result  accessed-builds  (nu-depend-on tail)
       ::
       =|  blocks=(list ^build)
       =?  blocks  ?=(~ head-result)  [[date.build head] blocks]
@@ -1730,43 +1804,47 @@
       ::
       ?^  blocks
         ::
-        [[%blocks blocks] this]
+        [build [%blocks blocks ~] accessed-builds]
       ::
       ?<  ?=(~ head-result)
       ?<  ?=(~ tail-result)
       ::
-      =-  [[%build-result -] this]
+      =-  [build [%build-result -] accessed-builds]
       `build-result`[%result u.head-result u.tail-result]
     ::
     ++  literal
       |=  =cage
-      [[%build-result %result %$ cage] this]
+      ^-  state-diff
+      [build [%build-result %result %$ cage] accessed-builds]
     ::
     ++  pin
       |=  [date=@da =schematic]
+      ^-  state-diff
       ::
-      =^  result  state  (depend-on schematic)
+      =^  result  accessed-builds  (nu-depend-on schematic)
       ::
       ?~  result
-        [[%blocks [date schematic]~] this]
-      [[%build-result %result %pin date u.result] this]
+        [build [%blocks [date schematic]~ ~] accessed-builds]
+      [build [%build-result %result %pin date u.result] accessed-builds]
     ::
     ++  ride
       |=  [formula=hoon =schematic]
+      ^-  state-diff
       ::
-      =^  result  state  (depend-on schematic)
+      =^  result  accessed-builds  (nu-depend-on schematic)
       ?~  result
-        [[%blocks [date.build schematic]~] this]
+        [build [%blocks [date.build schematic]~ ~] accessed-builds]
       ::
       =*  subject  u.result
       =*  subject-cage  (result-to-cage subject)
       =/  slim-schematic=^schematic  [%slim p.q.subject-cage formula]
-      =^  slim-result  state  (depend-on slim-schematic)
+      =^  slim-result  accessed-builds  (nu-depend-on slim-schematic)
       ?~  slim-result
-        [[%blocks [date.build slim-schematic]~] this]
+        [build [%blocks [date.build slim-schematic]~ ~] accessed-builds]
       ::
       ?:  ?=(%error -.u.slim-result)
-        :_  this
+        :-  build
+        :_  accessed-builds
         [%build-result %error [%leaf "%ride: "] message.u.slim-result]
       ::
       ?>  ?=([%result %slim *] u.slim-result)
@@ -1778,7 +1856,9 @@
       ?-    -.val
       ::
           %0
-        [[%build-result %result %ride [type.u.slim-result p.val]] this]
+        :-  build
+        :-  [%build-result %result %ride [type.u.slim-result p.val]]
+        accessed-builds
       ::
           %1
         =/  blocked-paths=(list path)  ((hard (list path)) p.val)
@@ -1819,7 +1899,7 @@
         ?^  failed
           ::  some failed
           ::
-          [[%build-result %error failed] this]
+          [build [%build-result %error failed] accessed-builds]
         ::  no failures
         ::
         =/  blocks=(list ^build)
@@ -1829,30 +1909,39 @@
           ::
           p.block
         ::
-        =.  state
+        =.  accessed-builds
           %+  roll  blocks
-          |=  [block=^build accumulator=_state]
-          =.  state  accumulator
-          +:(depend-on schematic.block)
+          |=  [block=^build accumulator=_accessed-builds]
+          =.  accessed-builds  accumulator
+          +:(nu-depend-on schematic.block)
         ::
-        [[%blocks blocks] this]
+        ::  TODO: Here we are passing a single ~ for :scry-blocked. Should we
+        ::  be passing one or multiple dependency back instead? Maybe not? Are
+        ::  we building blocking schematics, which they themselves will scry?
+        ::
+        [build [%blocks blocks ~] accessed-builds]
       ::
           %2
         =/  message=tang  [[%leaf "ford: %ride failed:"] p.val]
-        [[%build-result %error message] this]
+        [build [%build-result %error message] accessed-builds]
       ==
     ::
     ++  same
       |=  =schematic
+      ^-  state-diff
       ::
-      =^  result  state  (depend-on schematic)
+      =^  result  accessed-builds  (nu-depend-on schematic)
       ::
       ?~  result
-        [[%blocks [date.build schematic]~] this]
-      [[%build-result %result %same u.result] this]
+        [build [%blocks [date.build schematic]~ ~] accessed-builds]
+      [build [%build-result %result %same u.result] accessed-builds]
     ::
     ++  scry
+      ::  TODO: All accesses to :state which matter happens in this function;
+      ::  those calculations need to be lifted out of +make into +execute.
+      ::
       |=  =dependency
+      ^-  state-diff
       ::  construct a full +beam to make the scry request
       ::
       =/  beam  (extract-beam dependency `date.build)
@@ -1910,7 +1999,11 @@
         ?:  already-blocked
           ::  this dependency was already blocked
           ::
-          [[%blocks ~] this]
+          [build [%blocks ~ ~] accessed-builds]
+        ::  TODO: Cut this and put it in execute post make?
+        ::
+        ::  -- 8<8<8< --
+        ::
         ::  construct new :move to request blocked resource
         ::
         =/  wire=path
@@ -1923,7 +2016,10 @@
           ==
         ::
         =.  moves  [[duct=~ [%pass wire note]] moves]
-        [[%blocks ~] this]
+        ::
+        ::  -- 8<8<8< --
+        ::
+        [build [%blocks ~ `dependency] accessed-builds]
       ::  scry failed
       ::
       ?~  u.scry-response
@@ -1931,10 +2027,10 @@
           :~  leaf+"scry failed for"
               leaf+"%c{(trip care.dependency)} {<(en-beam beam)>}"
           ==
-        [[%build-result %error error] this]
+        [build [%build-result %error error] accessed-builds]
       ::  scry succeeded
       ::
-      [[%build-result %result %scry u.u.scry-response] this]
+      [build [%build-result %result %scry u.u.scry-response] accessed-builds]
     ::
     ++  slim
       |=  [subject-type=type formula=hoon]
@@ -1942,45 +2038,34 @@
       =/  compiled=(each (pair type nock) tang)
         (mule |.((~(mint ut subject-type) [%noun formula])))
       ::
+      :-  build
+      :_  accessed-builds
       ?-  -.compiled
-        %|  [[%build-result %error [leaf+"%slim failed: " p.compiled]] this]
-        %&  [[%build-result %result %slim p.compiled] this]
+        %|  [%build-result %error [leaf+"%slim failed: " p.compiled]]
+        %&  [%build-result %result %slim p.compiled]
       ==
     ::  |utilities:make: helper arms
     ::
     ::+|  utilities
     ::
-    ::  +depend-on: register component linkage between :build and :kid
-    ::
-    ++  depend-on
+    ++  nu-depend-on
       |=  kid=schematic
-      ^-  [(unit build-result) ford-state]
-      ::
+      ^-  [(unit build-result) _accessed-builds]
       =/  sub-build=^build  [date.build kid]
       ::
-      =:
-          builds-by-date.state
-        (~(put ju builds-by-date.state) date.build kid)
+      =.  accessed-builds  [sub-build accessed-builds]
       ::
-          builds-by-schematic.state
-        (~(put by-schematic builds-by-schematic.state) sub-build)
-      ::
-          sub-builds.components.state
-        (~(put ju sub-builds.components.state) build sub-build)
-      ::
-          client-builds.components.state
-        (~(put ju client-builds.components.state) sub-build build)
-      ==
+      ::  TODO: we don't (and don't want to) propagate results.state.
       ::
       =^  maybe-cache-line  results.state  (access-cache sub-build)
       ?~  maybe-cache-line
-        [~ state]
+        [~ accessed-builds]
       ::
       =*  cache-line  u.maybe-cache-line
       ?:  ?=(%tombstone -.cache-line)
-        [~ state]
+        [~ accessed-builds]
       ::
-      [`build-result.cache-line state]
+      [`build-result.cache-line accessed-builds]
     --
   ::  |utilities:per-event: helper arms
   ::
