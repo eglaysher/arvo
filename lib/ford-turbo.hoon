@@ -1628,42 +1628,118 @@
     ++  reduce
       |=  state-diffs=(list state-diff)
       ^+  ..execute
-::      ::  copy all the ducts from :from to this one
-::      ::
-::      =?  listeners.state  ?=(^ from)
-::        =/  consolidated
-::          %-  ~(uni in (fall (~(get by listeners.state) build) ~))
-::          (fall (~(get by listeners.state) u.from) ~)
-::        ?~  consolidated
-::          listeners.state
-::        (~(put by listeners.state) build consolidated)
       ::
-      ..execute
-::      ::  the build isn't complete, so try running +make on it
-::      ::
-::      =/  made  (make build)
-::      ::  temp: update based on the sub-builds we saw.
-::      ::
-::      =.  state
-::        %+  roll  sub-builds.made
-::        |=  [sub-build=^build accumulator=_state]
-::        =.  state  accumulator
-::        ::
-::        =^  maybe-cache-line  results.state  (access-cache sub-build)
-::        ::
-::        %_    state
-::            builds-by-date
-::          (~(put ju builds-by-date.state) date.build schematic.sub-build)
-::        ::
-::            builds-by-schematic
-::          (~(put by-schematic builds-by-schematic.state) sub-build)
-::        ::
-::            sub-builds.components
-::          (~(put ju sub-builds.components.state) build sub-build)
-::        ::
-::            client-builds.components
-::          (~(put ju client-builds.components.state) sub-build build)
-::        ==
+      |-  ^+  ..execute
+      ?~  state-diffs  ..execute
+      ::
+      =*  made  i.state-diffs
+      ::  perform live accounting if :is-live-scry
+      ::
+      =?    ..execute
+          ?&  ?=(%scry -.schematic.build.made)
+              (is-build-live build.made)
+          ==
+        ::
+        =/  dependency=dependency  dependency.schematic.build.made
+        =/  disc=disc  (extract-disc dependency)
+        ::
+        %_    ..execute
+        ::  link :disc to :dependency
+        ::
+            dependencies.state
+          (~(put ju dependencies.state) [disc dependency])
+        ::  mark :disc as dirty
+        ::
+            dirty-discs
+          (~(put in dirty-discs) disc)
+        ::  update :latest-by-disc.state if :date.build is later
+        ::
+            latest-by-disc.state
+          =/  latest-date  (~(get by latest-by-disc.state) disc)
+          ::
+          ?:  ?&  ?=(^ latest-date)
+                  (lte date.build.made u.latest-date)
+              == 
+            latest-by-disc.state
+          ::
+          (~(put by latest-by-disc.state) disc date.build.made)
+        ==
+      ::  process :sub-builds.made
+      ::
+      =.  state
+        %+  roll  sub-builds.made
+        |=  [sub-build=build accumulator=_state]
+        =.  state  accumulator
+        ::  freshen cache for sub-build
+        ::
+        =.  results.state  +:(access-cache sub-build)
+        ::
+        %_    state
+            builds-by-date
+          (~(put ju builds-by-date.state) date.build.made schematic.sub-build)
+        ::
+            builds-by-schematic
+          (~(put by-schematic builds-by-schematic.state) sub-build)
+        ::
+            sub-builds.components
+          (~(put ju sub-builds.components.state) build.made sub-build)
+        ::
+            client-builds.components
+          (~(put ju client-builds.components.state) sub-build build.made)
+        ::
+            listeners
+          ::
+          =/  unified-listeners
+            %-  ~(uni in (fall (~(get by listeners.state) sub-build) ~))
+            (fall (~(get by listeners.state) build.made) ~)
+          ::  don't put a key with an empty value
+          ::
+          ?~  unified-listeners
+            listeners.state
+          ::
+          (~(put by listeners.state) build.made unified-listeners)
+        ==
+      ::
+      ?-    -.result.made
+          %build-result
+        ..execute
+      ::
+          %blocks
+        =?    moves
+            ?=(^ scry-blocked.result.made)
+          ::
+          =*  dependency  u.scry-blocked.result.made
+          ::  construct new move to request blocked resource
+          ::
+          =/  wire=path
+            (welp /(scot %p our)/dependency (dependency-to-path dependency))
+          ::
+          =/  note=note
+            =/  disc=disc  (extract-disc dependency)
+            =,  rail.dependency
+            :*  %c  %warp  sock=[our their=ship.disc]  desk.disc
+                `[%sing care.dependency case=[%da date.build.made] spur]
+            ==
+          ::
+          [[duct=~ [%pass wire note]] moves]
+        ::
+        =?    blocks.state
+            ?=(^ scry-blocked.result.made)
+          ::
+          ?>  ?=(%scry -.schematic.build.made)
+          =*  dependency  dependency.schematic.build.made
+          ::
+          (~(put ju blocks.state) dependency build.made)
+        ::
+        ?:  ?&  ?=(%scry -.schematic.build.made)
+                (is-build-live build.made)
+            ==
+          ..execute
+        ..execute
+          
+          
+      ==
+      ::
 ::      ::  dispatch on the product of +make
 ::      ::
 ::      ?-    -.result.made
@@ -2032,33 +2108,6 @@
       ::  construct a full +beam to make the scry request
       ::
       =/  beam  (extract-beam dependency `date.build)
-      ::  extract :disc from :beam
-      ::
-      =/  disc=disc  (extract-disc dependency)
-      ::
-      =/  is-live-clay=?  &((is-build-live build) ?=(%c -.dependency))
-      ::  link :disc to :dependency
-      ::
-      =?    dependencies.state
-          is-live-clay
-        (~(put ju dependencies.state) [disc dependency])
-      ::  update :latest-by-disc.state if :date.build is later
-      ::
-      =?    latest-by-disc.state
-          ?&  is-live-clay
-          ::
-              =/  latest-date  (~(get by latest-by-disc.state) disc)
-              ::
-              ?|  ?=(~ latest-date)
-                  (gth date.build u.latest-date)
-          ==  ==
-        ::
-        (~(put by latest-by-disc.state) disc date.build)
-      ::  mark :disc as dirty if we're building a live dependency
-      ::
-      =?    dirty-discs
-          is-live-clay
-        (~(put in dirty-discs) disc)
       ::  perform scry operation if we don't already know the result
       ::
       ::    Look up :dependency in :scry-results.per-event to avoid
@@ -2084,27 +2133,9 @@
         =.  blocks.state  (~(put ju blocks.state) dependency build)
         ::
         ?:  already-blocked
-          ::  this dependency was already blocked
+          ::  this dependency was already blocked, so don't duplicate move
           ::
           [build [%blocks ~ ~] accessed-builds]
-        ::  TODO: Cut this and put it in execute post make?
-        ::
-        ::  -- 8<8<8< --
-        ::
-        ::  construct new :move to request blocked resource
-        ::
-        =/  wire=path
-          (welp /(scot %p our)/dependency (dependency-to-path dependency))
-        ::
-        =/  note=note
-          =,  rail.dependency
-          :*  %c  %warp  sock=[our their=ship.disc]
-              [desk.disc `[%sing care.dependency case=[%da date.build] spur]]
-          ==
-        ::
-        =.  moves  [[duct=~ [%pass wire note]] moves]
-        ::
-        ::  -- 8<8<8< --
         ::
         [build [%blocks ~ `dependency] accessed-builds]
       ::  scry failed
