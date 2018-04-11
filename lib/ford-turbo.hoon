@@ -1714,18 +1714,30 @@
       ::
       ?-    -.result.made
           %build-result
-          ~&  made+build.made
         ::
         =.  results.state
           %+  ~(put by results.state)  build.made
           [%result last-accessed=now build-result.result.made]
         ::
-        ::  TODO: unblock clients
+        =/  client-builds
+          =-  ~(tap in (fall - ~))
+          (~(get by client-builds.blocked-builds.state) build.made)
+        ::
+        =.  blocked-builds.state
+          %+  roll  client-builds
+          ::
+          |=  [client=build blocked-builds=_blocked-builds.state]
+          ::
+          %_    blocked-builds
+              sub-builds
+            (~(del ju sub-builds.blocked-builds) client build.made)
+          ::
+              client-builds
+            (~(del ju client-builds.blocked-builds) build.made client)
+          ==
+        ::
         =.  next-builds.state
-          %+  roll
-            =-  ~&  clients+-  -
-            =-  ~(tap in (fall - ~))
-            (~(get by client-builds.blocked-builds.state) build.made)
+          %+  roll  client-builds
           ::
           |=  [client=build next-builds=_next-builds.state]
           ::
@@ -1754,7 +1766,7 @@
               =(build-result.result.made build-result.u.previous-result)
           ==
         ::
-        =?    rebuilds.state  
+        =?    rebuilds.state
             same-result
           ::
           ?>  ?=(^ previous-build)
@@ -1762,9 +1774,6 @@
         ::
         =?    ..execute
             !same-result
-          ~&  build-made+build.made
-          ~&  sending-live-mades+(root-live-listeners build.made)
-          ~&  root-listeners+root-builds.state
           (send-mades build.made (root-live-listeners build.made))
         ::
         =?    ..execute
@@ -1782,7 +1791,6 @@
         $(state-diffs t.state-diffs)
       ::
           %blocks
-        ~&  blocked+build.made
         =?    moves
             ?=(^ scry-blocked.result.made)
           ::
