@@ -1435,12 +1435,13 @@
       ::  enqueue :next-builds into the set of builds we may run
       ::
       =/  unified  (~(uni in next-builds.state) builds)
-      =.  next-builds  ~
+      =.  next-builds.state  ~
       ::
       =^  gathered  ..execute  (gather-internal ~(tap in unified))
+      =*  gathered-builds  -.gathered
       ::  convert to set and back to de-duplicate
       ::
-      [~(tap in (sy gathered)) ..execute]
+      [~(tap in (sy gathered-builds)) ..execute]
     ::  +gather-internal: collect builds to be run in a batch
     ::
     ++  gather-internal
@@ -1503,10 +1504,10 @@
       =>  .(old-subs `(list ^build)`old-subs)
       ::  recursively check if :old-subs can be promoted or gathered
       ::
-      =.  ..$
+      =.  ..gather-internal
         ::
-        |-  ^+  ..^$
-        ?~  old-subs  ..^$
+        |-  ^+  ..gather-internal
+        ?~  old-subs  ..gather-internal
         ::
         =/  old-sub=^build  i.old-subs
         =/  new-sub=^build  old-sub(date date.build)
