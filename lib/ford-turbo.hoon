@@ -1280,7 +1280,7 @@
         (~(put ju root-builds.state) build [duct %.y])
       ==
       ::
-      (execute build from=~)
+      (execute (sy build ~))
     ::
     ++  start-once-build
       ^+  this
@@ -1298,7 +1298,7 @@
         (~(put ju root-builds.state) build [duct %.n])
       ==
       ::
-      (execute build from=~)
+      (execute (sy build ~))
     ::
     --
   ::  +rebuild: rebuild any live builds based on +dependency updates
@@ -1329,15 +1329,10 @@
       (~(put ju dependency-updates) date dependency)
     ::  rebuild dependency builds at the new date
     ::
-    %+  roll  dependencies
-    |=  [=dependency that=_this]
-    ::
-    =/  build=build  [date `schematic`[%scry dependency]]
-    ::
-    =/  previous-build=^build
-      (need (~(find-previous by-schematic builds-by-schematic.state) build))
-    ::
-    (execute:that build from=`previous-build)
+    %-  execute
+    %-  sy
+    %+  turn  dependencies
+    |=(=dependency `build`[date [%scry dependency]])
   ::  +unblock: continue builds that had blocked on :dependency
   ::
   ++  unblock
@@ -1345,9 +1340,6 @@
     ^-  [(list move) ford-state]
     ::
     =<  finalize
-    ::  find all the :blocked-builds to continue
-    ::
-    =/  blocked-builds  ~(tap in (~(get ju blocks.state) dependency))
     ::  place :scry-result in :scry-results.per-event
     ::
     ::    We don't want to call the actual +scry function again,
@@ -1363,10 +1355,11 @@
     ::    to be used during this event before it goes out of scope.
     ::
     =.  scry-results  (~(put by scry-results) dependency scry-result)
+    ::  find all the :blocked-builds to continue
     ::
-    %+  roll  blocked-builds
-    |=  [=build that=_this]
-    (execute:that build from=~)
+    =/  blocked-builds  (~(get ju blocks.state) dependency)
+    ::
+    (execute blocked-builds)
   ::
   ++  cancel  ^+  [moves state]
     ::
@@ -1424,227 +1417,340 @@
   ::    to be processed at the end of the event.
   ::
   ++  execute
-    |=  [=build from=(unit build)]
-    ^+  this
-    ::  normalize :date.build for a %pin schematic
+    |=  builds=(set build)
+    ^+  ..execute
     ::
-    =?  date.build  ?=(%pin -.schematic.build)  date.schematic.build
-    ::  if the build is complete and not a %tombstone, we're done
+    |^  ^+  ..execute
+        ::
+        =^  gathered-builds  ..execute  (gather builds)
+        ::
+        =/  state-diffs=(list state-diff)  (turn gathered-builds make)
+        ::
+        (reduce state-diffs)
+    ::  +gather: collect builds to be run in a batch: wraps +gather-internal
     ::
-    =^  maybe-cache-line  results.state  (access-cache build)
-    ::  copy all the ducts from :from to this one
-    ::
-    =?  listeners.state  ?=(^ from)
-      =/  consolidated
-        %-  ~(uni in (fall (~(get by listeners.state) build) ~))
-        (fall (~(get by listeners.state) u.from) ~)
-      ?~  consolidated
-        listeners.state
-      (~(put by listeners.state) build consolidated)
-    ::
-    ?:  ?=([~ %result *] maybe-cache-line)
+    ++  gather
+      |=  builds=(set build)
+      ^-  [(list build) _..execute]
+      ::  enqueue :next-builds into the set of builds we may run
       ::
-      this
-    ::  place :build in :state if it isn't already there
-    ::
-    =:
-        builds-by-date.state
-      (~(put ju builds-by-date.state) date.build schematic.build)
-    ::
-        builds-by-schematic.state
-      (~(put by-schematic builds-by-schematic.state) build)
-    ==
-    ::  find :previous-build and :previous-result in :state
-    ::
-    =/  previous-build
-      (~(find-previous by-schematic builds-by-schematic.state) build)
-    ::
-    =^  previous-result  results.state
-      ?~  previous-build  [~ results.state]
-      (access-cache u.previous-build)
-    ::  kids: sub-builds of :build
-    ::
-    =/  kids  ~(tap in (~(get ju sub-builds.components.state) build))
-    ::  result: +build-result to be populated by +make or a previous result
-    ::
-    =|  result=(unit build-result)
-    ::
-    =<  ..execute
-    |^
-    ::
-    ::  if :build is unchanged from :previous-build, don't run +make
-    ::
-    =^  subs-changed  results.state  sub-builds-changed
-    ::
-    ?.  |(subs-changed dependencies-changed)
-      ::  copy :previous-result to new date
+      =/  unified  (~(uni in next-builds.state) builds)
+      =.  next-builds  ~
       ::
-      ?>  ?=([~ %result *] previous-result)
+      =^  gathered  ..execute  (gather-internal ~(tap in unified))
+      ::  convert to set and back to de-duplicate
       ::
-      =.  result  `build-result.u.previous-result
+      [~(tap in (sy gathered)) ..execute]
+    ::  +gather-internal: collect builds to be run in a batch
+    ::
+    ++  gather-internal
+      =|  gathered=(list build)
+      =/  can-promote=?  &
       ::
-      =~  store-result
-          update-live-tracking
-          ::
-          ?<  ?=(~ previous-build)
-          =.  state  (promote-live-listeners u.previous-build build)
-          ::
-          link-rebuilds
-          =.  ..execute  (send-mades build current-once-listeners)
-          delete-once-listeners
+      |=  builds=(list build)
+      ^+  [[gathered can-promote] ..execute]
+      ::
+      ?~  builds
+        [[gathered can-promote] ..execute]
+      ::
+      =/  build=build  i.builds
+      ::  normalize :date.build for a %pin schematic
+      ::
+      =?  date.build  ?=(%pin -.schematic.build)  date.schematic.build
+      ::  place :build in :state if it isn't already there
+      ::
+      =:  builds-by-date.state
+        (~(put ju builds-by-date.state) date.build schematic.build)
+      ::
+          builds-by-schematic.state
+        (~(put by-schematic builds-by-schematic.state) build)
       ==
-    ::  the build isn't complete, so try running +make on it
-    ::
-    =/  made  (make build)
-    ::  temp: update based on the sub-builds we saw.
-    ::
-    =.  state
-      %+  roll  sub-builds.made
-      |=  [sub-build=^build accumulator=_state]
-      =.  state  accumulator
+      ::  if any dependencies have changed, we need to rebuild :build
       ::
-      =^  maybe-cache-line  results.state  (access-cache sub-build)
+      ?:  (dependencies-changed build)
+        $(builds t.builds, can-promote |, gathered [build gathered])
+      ::  old-build: most recent previous build with :schematic.build
       ::
-      %_    state
-          builds-by-date
-        (~(put ju builds-by-date.state) date.build schematic.sub-build)
+      =/  old-build=(unit ^build)
+        (~(find-previous by-schematic builds-by-schematic.state) build)
+      ::  if no previous builds exist, we need to run :build
       ::
-          builds-by-schematic
-        (~(put by-schematic builds-by-schematic.state) sub-build)
+      ?~  old-build
+        $(builds t.builds, can-promote |, gathered [build gathered])
+      ::  if we don't have :u.old-build's result cached, we need to run :build
       ::
-          sub-builds.components
-        (~(put ju sub-builds.components.state) build sub-build)
+      =^  old-cache-line  results.state  (access-cache u.old-build)
+      ?~  old-cache-line
+        $(builds t.builds, can-promote |, gathered [build gathered])
+      ::  if :u.old-build's result has been wiped, we need to run :build
       ::
-          client-builds.components
-        (~(put ju client-builds.components.state) sub-build build)
-      ==
-    ::  dispatch on the product of +make
-    ::
-    ?-    -.result.made
-        ::  %build-result: build completed and produced its result
+      ?:  ?=(%tombstone -.u.old-cache-line)
+        $(builds t.builds, can-promote |, gathered [build gathered])
+      ::  old-subs: sub-builds of :u.old-build
+      ::
+      =/  old-subs=(list ^build)
+        ~(tap in (fall (~(get by sub-builds.components.state) u.old-build) ~))
+      ::  if :u.old-build had no sub-builds, promote it
+      ::
+      ?~  old-subs
+        =^  wiped-rebuild  ..execute  (promote-build u.old-build date.build)
+        ?~  wiped-rebuild
+          $(builds t.builds, can-promote &)
         ::
-        %build-result
+        $(builds t.builds, can-promote &, gathered [u.wiped-rebuild gathered])
+      ::  tmi problem
       ::
-      =.  result  `build-result.result.made
+      =>  .(old-subs `(list ^build)`old-subs)
+      ::  recursively check if :old-subs can be promoted or gathered
       ::
-      =>  store-result
-      =>  update-live-tracking
-      ::
-      =?  state  &(?=(^ previous-build) ?=(^ previous-result))
-        (promote-live-listeners u.previous-build build)
-      ::
-      =.  ..execute  (send-mades build (root-once-listeners build))
-      =>  delete-once-listeners
-      ::  if result is same as previous, note sameness
-      ::
-      =/  same-result=?
-        ?<  ?=(~ result)
+      =.  ..$
         ::
-        ?&  ?=([~ %result *] previous-result)
-            =(u.result build-result.u.previous-result)
-        ==
-      ::
-      ?:  same-result
+        |-  ^+  ..^$
+        ?~  old-subs  ..^$
         ::
-        link-rebuilds
+        =/  old-sub=^build  i.old-subs
+        =/  new-sub=^build  old-sub(date date.build)
+        ::
+        =^  old-sub-result  results.state  (access-cache old-sub)
+        ?~  old-sub-result
+          $(old-subs t.old-subs, can-promote |, gathered [new-sub gathered])
+        ::
+        ?:  ?=(%tombstone -.u.old-sub-result)
+          $(old-subs t.old-subs, can-promote |, gathered [new-sub gathered])
+        ::
+        =^  new-sub-result  results.state  (access-cache new-sub)
+        ?~  new-sub-result
+          =^  sub-gathered  ..execute  (gather-internal ~[new-sub])
+          =+  [sub-gathered-builds sub-can-promote]=sub-gathered
+          ::
+          ?>  =(sub-can-promote (~(has by new.rebuilds.state) old-sub))
+          ::
+          %_  $
+            old-subs     t.old-subs
+            can-promote  &(can-promote sub-can-promote)
+            gathered     (welp sub-gathered-builds gathered)
+          ==
+        ::  if the rebuild has been wiped, we need to rerun it
+        ::
+        ::    Note: It might make sense to check if :old-sub and :new-sub
+        ::    are linked in :rebuilds.state, in case one is a tombstone,
+        ::    in which case we could copy the other result.
+        ::
+        ?:  ?=(%tombstone -.u.new-sub-result)
+          $(old-subs t.old-subs, can-promote |, gathered [new-sub gathered])
+        ::
+        ?:  =(build-result.u.new-sub-result build-result.u.old-sub-result)
+          $(old-subs t.old-subs)
+        ::
+        $(old-subs t.old-subs, can-promote |, gathered [new-sub gathered])
       ::
-      =.  ..execute  (send-mades build (root-live-listeners build))
-      =>  ?~(previous-build this (cleanup u.previous-build))
-      =>  (cleanup build)
-      =>  ::  recurse "upward" into client builds now that :build is done
-          ::
-          =/  clients=(list ^build)
-            ~(tap in (fall (~(get by client-builds.components.state) build) ~))
-          ::
-          |-  ^+  this
-          ?~  clients  this
-          ::  don't copy listeners upward
-          ::
-          ::    We need to copy listeners downward so that sub-builds inherit
-          ::    listeners from the root. We don't want to copy listeners upward
-          ::    because then all roots would get listeners copied to each
-          ::    other.
-          ::
-          $(clients t.clients, ..execute (execute i.clients from=~))
+      ?:  can-promote
+        ::  no sub-builds changed, so we can promote the old build
+        ::
+        =^  wiped-rebuild  ..execute  (promote-build u.old-build date.build)
+        ?~  wiped-rebuild
+          $(builds t.builds)
+        ::
+        $(builds t.builds, gathered [u.wiped-rebuild gathered])
+      ::  some sub-builds changed, so :build needs to be rerun
       ::
-      |-  ^+  this
+      $(builds t.builds, gathered [build gathered])
+    ::  +promote-build: promote result of :build to newer :date
+    ::
+    ::    Also promotes live listeners, links the two builds in :rebuilds.state,
+    ::    sends %made moves for any once listeners on the new build, and
+    ::    calls +send-future-mades to make sure listener tracking is up to date.
+    ::
+    ++  promote-build
+      |=  [old-build=build date=@da]
+      ^-  [(unit build) _..execute]
+      ::
+      =^  old-cache-line  results.state  (access-cache old-build)
+      ::
+      ?>  ?=([~ %result *] old-cache-line)
+      ::
+      =/  new-build=build  [date schematic.old-build]
+      ::
+      =.  results.state  (~(put by results.state) new-build u.old-cache-line)
+      ::
+      =.  rebuilds.state  (link-rebuilds old-build new-build)
+      ::
+      =.  state  (promote-live-listeners old-build new-build)
+      ::
+      =.  ..execute  (send-mades new-build (root-once-listeners new-build))
+      ::
+      =.  state  (delete-root-once-listeners new-build)
+      ::
+      (send-future-mades new-build)
+    ::  +send-future-mades: send %made moves for future rebuilds
+    ::
+    ::    If a future rebuild has been wiped, then produce it along with
+    ::    a modified `..execute` core.
+    ::
+    ++  send-future-mades
+      |=  =build
+      ^-  [(unit ^build) _..execute]
+      ::
+      =^  result  results.state  (access-cache build)
+      ::
       =/  next  (~(find-next by-schematic builds-by-schematic.state) build)
       ?~  next
         ::  no future build
         ::
-        this
+        [~ ..execute]
       ::
       =^  next-result  results.state  (access-cache u.next)
       ?~  next-result
         ::  unfinished future build
         ::
-        this
+        [~ ..execute]
+      ::  if :next's result hasn't been wiped
+      ::
       ?:  ?=(%result -.u.next-result)
         ::
         =.  state  (promote-live-listeners build u.next)
-        =.  this  (cleanup build)
+        =.  ..execute  (cleanup build)
+        ::  if the result has changed, send %made moves for live listeners
         ::
-        =.  ..execute  (send-mades u.next (root-live-listeners u.next))
+        =?    ..execute
+            ?&  ?=([~ %result *] result)
+                !=(build-result.u.result build-result.u.next-result)
+            ==
+          (send-mades u.next (root-live-listeners u.next))
         ::
         $(build u.next)
+      ::  if :next did not complete, produce it
       ::
-      this(..execute (execute u.next from=~))
+      [`u.next ..execute]
+    ::  reduce: TODO
     ::
-        ::  %blocks: build got stuck and produced a list of blocks
-        ::
-        %blocks
+    ++  reduce
+      |=  state-diffs=(list state-diff)
+      ^+  ..execute
+::      ::  copy all the ducts from :from to this one
+::      ::
+::      =?  listeners.state  ?=(^ from)
+::        =/  consolidated
+::          %-  ~(uni in (fall (~(get by listeners.state) build) ~))
+::          (fall (~(get by listeners.state) u.from) ~)
+::        ?~  consolidated
+::          listeners.state
+::        (~(put by listeners.state) build consolidated)
       ::
-      =/  blocks=(list ^build)  builds.result.made
-      |-  ^+  this
-      ?~  blocks  this
-      ::
-      =*  block  i.blocks
-      $(blocks t.blocks, ..execute (execute block from=`build))
-    ==
-    ::  +sub-builds-changed: did sub-builds change since :previous-build?
-    ::
-    ::    Produces the answer and a mutant version of :results.state,
-    ::    since it freshens cache lines.
-    ::
-    ++  sub-builds-changed  ^-  [any-changed=? _results.state]
-      ::  if there's nothing to promote, consider :build changed
-      ::
-      ?~  previous-build  [& results.state]
-      ::  grab the sub-builds of :previous-build
-      ::
-      =/  old-sub-builds
-        (~(get ju sub-builds.components.state) u.previous-build)
-      ::
-      =/  subs  ~(tap in old-sub-builds)
-      ::  freshen cache for old sub-builds and their rebuilds
-      ::
-      ::    If any :subs don't have a :rebuild, :build needs to be rebuilt.
-      ::
-      %+  roll  subs
-      |=  $:  sub=^build
-              [any-changed=_| results=_results.state]
-          ==
-      ::  place :results in the state so +access-cache sees them
-      ::
-      =.  results.state  results
-      ::  freshen the cache for :sub
-      ::
-      =^  old-result  results.state  (access-cache sub)
-      ::  find a later +build of :sub with an identical result
-      ::
-      =/  rebuild  (~(get by new.rebuilds.state) sub)
-      ::  if there's no :rebuild of :sub, :build needs to be rebuilt.
-      ::
-      ?~  rebuild
-        [& results.state]
-      ::  freshen the cache for :rebuild
-      ::
-      =^  new-result  results.state  (access-cache u.rebuild)
-      ::
-      [any-changed results.state]
+      ..execute
+::      ::  the build isn't complete, so try running +make on it
+::      ::
+::      =/  made  (make build)
+::      ::  temp: update based on the sub-builds we saw.
+::      ::
+::      =.  state
+::        %+  roll  sub-builds.made
+::        |=  [sub-build=^build accumulator=_state]
+::        =.  state  accumulator
+::        ::
+::        =^  maybe-cache-line  results.state  (access-cache sub-build)
+::        ::
+::        %_    state
+::            builds-by-date
+::          (~(put ju builds-by-date.state) date.build schematic.sub-build)
+::        ::
+::            builds-by-schematic
+::          (~(put by-schematic builds-by-schematic.state) sub-build)
+::        ::
+::            sub-builds.components
+::          (~(put ju sub-builds.components.state) build sub-build)
+::        ::
+::            client-builds.components
+::          (~(put ju client-builds.components.state) sub-build build)
+::        ==
+::      ::  dispatch on the product of +make
+::      ::
+::      ?-    -.result.made
+::          ::  %build-result: build completed and produced its result
+::          ::
+::          %build-result
+::        ::
+::        =.  result  `build-result.result.made
+::        ::
+::        =>  store-result
+::        =>  update-live-tracking
+::        ::
+::        =?  state  &(?=(^ previous-build) ?=(^ previous-result))
+::          (promote-live-listeners u.previous-build build)
+::        ::
+::        =.  ..execute  (send-mades build (root-once-listeners build))
+::        =>  delete-once-listeners
+::        ::  if result is same as previous, note sameness
+::        ::
+::        =/  same-result=?
+::          ?<  ?=(~ result)
+::          ::
+::          ?&  ?=([~ %result *] previous-result)
+::              =(u.result build-result.u.previous-result)
+::          ==
+::        ::
+::        ?:  same-result
+::          ::
+::          link-rebuilds
+::        ::
+::        =.  ..execute  (send-mades build (root-live-listeners build))
+::        =>  ?~(previous-build this (cleanup u.previous-build))
+::        =>  (cleanup build)
+::        =>  ::  recurse "upward" into client builds now that :build is done
+::            ::
+::            =/  clients=(list ^build)
+::              ~(tap in (fall (~(get by client-builds.components.state) build) ~))
+::            ::
+::            |-  ^+  this
+::            ?~  clients  this
+::            ::  don't copy listeners upward
+::            ::
+::            ::    We need to copy listeners downward so that sub-builds inherit
+::            ::    listeners from the root. We don't want to copy listeners upward
+::            ::    because then all roots would get listeners copied to each
+::            ::    other.
+::            ::
+::            $(clients t.clients, ..execute (execute i.clients from=~))
+::        ::
+::        |-  ^+  this
+::        =/  next  (~(find-next by-schematic builds-by-schematic.state) build)
+::        ?~  next
+::          ::  no future build
+::          ::
+::          this
+::        ::
+::        =^  next-result  results.state  (access-cache u.next)
+::        ?~  next-result
+::          ::  unfinished future build
+::          ::
+::          this
+::        ?:  ?=(%result -.u.next-result)
+::          ::
+::          =.  state  (promote-live-listeners build u.next)
+::          =.  this  (cleanup build)
+::          ::
+::          =.  ..execute  (send-mades u.next (root-live-listeners u.next))
+::          ::
+::          $(build u.next)
+::        ::
+::        this(..execute (execute u.next from=~))
+::      ::
+::          ::  %blocks: build got stuck and produced a list of blocks
+::          ::
+::          %blocks
+::        ::
+::        =/  blocks=(list ^build)  builds.result.made
+::        |-  ^+  this
+::        ?~  blocks  this
+::        ::
+::        =*  block  i.blocks
+::        $(blocks t.blocks, ..execute (execute block from=`build))
+::      ==
     ::  +dependencies-changed: did dependencies change since :previous-build?
     ::
-    ++  dependencies-changed  ^-  ?
+    ++  dependencies-changed
+      |=  =build
+      ^-  ?
       ?.  ?=(%scry -.schematic.build)
         |
       ::
@@ -1656,34 +1762,33 @@
       =/  updates  (fall (~(get by dependency-updates.state) date.build) ~)
       ::
       (~(has in updates) dependency)
-    ::  +current-once-listeners: once listeners on :build
-    ::
-    ++  current-once-listeners  ^-  (list listener)
-      (skip current-listeners is-listener-live)
-    ::  +current-live-listeners: live listeners on :build
-    ::
-    ++  current-live-listeners  ^-  (list listener)
-      (skim current-listeners is-listener-live)
-    ::  +current-listeners: listeners on :build, both live and once
-    ::
-    ++  current-listeners  ^-  (list listener)
-      ~(tap in (fall (~(get by listeners.state) build) ~))
+::      ::  +current-once-listeners: once listeners on :build
+::      ::
+::      ++  current-once-listeners  ^-  (list listener)
+::        (skip current-listeners is-listener-live)
+::      ::  +current-live-listeners: live listeners on :build
+::      ::
+::      ++  current-live-listeners  ^-  (list listener)
+::        (skim current-listeners is-listener-live)
+::      ::  +current-listeners: listeners on :build, both live and once
+::      ::
+::      ++  current-listeners  ^-  (list listener)
+::        ~(tap in (fall (~(get by listeners.state) build) ~))
     ::  +link-rebuilds: link old and new same build in :rebuilds.state
     ::
-    ++  link-rebuilds  ^+  this
+    ++  link-rebuilds
+      |=  [old-build=build new-build=build]
+      ^+  rebuilds.state
       ::
-      ?<  ?=(~ previous-build)
-      ::
-      %_    this
-          old.rebuilds.state
-        (~(put by old.rebuilds.state) build u.previous-build)
-      ::
-          new.rebuilds.state
-        (~(put by new.rebuilds.state) u.previous-build build)
+      %_  rebuilds.state
+        old  (~(put by old.rebuilds.state) new-build old-build)
+        new  (~(put by new.rebuilds.state) old-build new-build)
       ==
     ::  update :dirty-discs.per-event to reflect the fact that :build is done
     ::
-    ++  update-live-tracking  ^+  this
+    ++  update-live-tracking
+      |=  =build
+      ^+  this
       ?.  ?=(%scry -.schematic.build)
         this
       ::
@@ -1695,35 +1800,16 @@
       =/  disc=disc  disc.rail.dependency
       ::
       this(dirty-discs (~(put in dirty-discs) disc))
-    ::  +delete-once-listeners: remove once listeners on :build from :state
+    ::  +delete-root-once-listeners: remove once listeners on :build from :state
     ::
-    ++  delete-once-listeners  ^+  this
-      %_    this
-          state
-        %+  roll  (root-once-listeners build)
-        |=  [=listener accumulator=_state]
-        =.  state  accumulator
-        (remove-listener-from-build listener build)
-      ==
-    ::  +store-result: store :result in :state
-    ::
-    ++  store-result
+    ++  delete-root-once-listeners
+      |=  =build
+      ^+  state
       ::
-      ?<  ?=(~ result)
-      ::
-      %_    this
-          results.state
-        ::
-        %+  ~(put by results.state)  build
-        [%result last-accessed=now build-result=u.result]
-      ==
-    ::  +cleanup: cleanup :build; wraps ^cleanup
-    ::
-    ++  cleanup
-      |=  build=^build  ^+  this
-      this(..execute (^cleanup build))
-    ::
-    ++  this  .
+      %+  roll  (root-once-listeners build)
+      |=  [=listener accumulator=_state]
+      =.  state  accumulator
+      (remove-listener-from-build listener build)
     --
   ::  +make: attempt to perform :build, non-recursively
   ::
