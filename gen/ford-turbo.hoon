@@ -27,7 +27,7 @@
 ::  test-ride-scry-fail
 ::  test-ride-scry-block
   test-five-oh-fora
-  test-live-two-deep
+  ::  test-live-two-deep
 ==
 ++  test-is-schematic-live
   ~&  %test-is-schematic-live
