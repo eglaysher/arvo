@@ -1338,7 +1338,7 @@
       (~(put ju dependency-updates) date dependency)
     ::  rebuild dependency builds at the new date
     ::
-    %-  execute
+    %-  execute-loop
     %-  sy
     %+  turn  dependencies
     |=(=dependency `build`[date [%scry dependency]])
@@ -1424,6 +1424,7 @@
     ^+  ..execute
     ::
     =.  ..execute  (execute builds)
+    ~&  [%after-execute (turn ~(tap in next-builds.state) build-to-tape)]
     ::
     ?~  next-builds.state
       ..execute
@@ -1459,10 +1460,12 @@
       ::  enqueue :next-builds into the set of builds we may run
       ::
       =/  unified  (~(uni in next-builds.state) builds)
+      ~&  [%unified-builds (turn ~(tap in unified) build-to-tape)]
       =.  next-builds.state  ~
       ::
       =^  gathered  ..execute  (gather-internal ~(tap in unified))
       =*  gathered-builds  -.gathered
+      ~&  [%after-gathered-internal (turn gathered-builds build-to-tape)]
       ::  convert to set and back to de-duplicate
       ::
       [~(tap in (sy gathered-builds)) ..execute]
@@ -1482,10 +1485,15 @@
         [[gathered can-promote] ..execute]
       ::
       =/  build=build  i.builds
+      ~&  [depth %looking-at (build-to-tape build)]
       ::~&  depth^gather-internal+(build-to-tape build)
       ::  normalize :date.build for a %pin schematic
       ::
       =?  date.build  ?=(%pin -.schematic.build)  date.schematic.build
+      ::
+      =^  current-result  results.state  (access-cache build)
+      ?:  ?=([~ %result *] current-result)
+        $(builds t.builds)
       ::  place :build in :state if it isn't already there
       ::
       =:  builds-by-date.state
@@ -1550,6 +1558,7 @@
         =^  unblocked-clients  state  (mark-as-done build)
         ::~&  depth^gather-unblocked-clients+unblocked-clients
         ::
+        ~&  [depth %no-old-subs-original]
         %_  $
           builds       t.builds
           can-promote  &
@@ -1557,10 +1566,10 @@
         ==
       ::  recursively check if :old-subs can be promoted or gathered
       ::
-      =.  ..gather-internal
+      =/  recursive-result
         ::
-        |-  ^+  ..gather-internal
-        ?~  old-subs  ..gather-internal
+        |-  ^+  [can-promote gathered state moves]
+        ?~  old-subs  [can-promote gathered state moves]
         ::
         =/  old-sub=^build  i.old-subs
         =/  new-sub=^build  old-sub(date date.build)
@@ -1577,7 +1586,17 @@
           =^  sub-gathered  ..execute  ^$(builds ~[new-sub])
           =+  [sub-gathered-builds sub-can-promote]=sub-gathered
           ::
-          ?>  =(sub-can-promote (~(has by new.rebuilds.state) old-sub))
+
+          ::  we continue to only pass the first %clay card instead of the
+          ::  %made, too.
+          ::
+          ::  ok, so none of this here is getting promoted,
+          ~&  [depth %sub-build (build-to-tape old-sub)]
+          ~&  [depth %in-case can-promote=can-promote sub-can-promote=sub-can-promote computed=&(can-promote sub-can-promote) in-new-rebuilds=(~(has by new.rebuilds.state) old-sub)]
+
+
+
+::          ?>  =(sub-can-promote (~(has by new.rebuilds.state) old-sub))
           ::
           %_  $
             old-subs     t.old-subs
@@ -1595,9 +1614,19 @@
         ::
         ?:  =(build-result.u.new-sub-result build-result.u.old-sub-result)
           ::~&  depth^%result-same
+          ~&  [depth %if-builds-are-the-same]
           $(old-subs t.old-subs)
         ::
+        ~&  [depth %final-recursive-old-sub-check old-can-promote=can-promote]
         $(old-subs t.old-subs, can-promote |, gathered [new-sub gathered])
+      ::
+      =+  [can-promote-nu gathered-nu state-nu moves-nu]=recursive-result
+      =:  can-promote  can-promote-nu
+          gathered     gathered-nu
+          state        state-nu
+          moves        moves-nu
+      ==
+      ~&  [depth %what-is-can-promote can-promote]
       ::
       ?:  can-promote
         ::~&  depth^can-promote+(build-to-tape build)
@@ -1609,6 +1638,7 @@
         ::
         =?  gathered  ?=(^ wiped-rebuild)  [u.wiped-rebuild gathered]
         ::
+        ~&  [depth %maybe-unblocked-clients-are-sig unblocked-clients]
         %_  $
           builds       t.builds
           can-promote  &
@@ -1648,7 +1678,7 @@
         =/  new-sub=build  old-sub(date date)
         %_    components
             sub-builds
-          (~(put ju sub-builds.components) new-build new-sub)         
+          (~(put ju sub-builds.components) new-build new-sub)
         ::
             client-builds
           (~(put ju client-builds.components) new-sub new-build)
@@ -1830,11 +1860,9 @@
             &(!same-result ?=(^ previous-build))
           ::
           %-  ~(gas in next-builds.state)
+          =-  ~&  [%new-next-builds -]  -
           %+  turn
             %+  weld
-              ~&  previous+u.previous-build
-              ~&  all-clients+client-builds.components.state
-              =-  ~&(old-clients+(turn - build-to-tape) -)
               =-  ~(tap in (fall - ~))
               (~(get by client-builds.components.state) u.previous-build)
             ::
@@ -1847,6 +1875,8 @@
           ::
           |=  old-client=build
           old-client(date date.build.made)
+        ::
+        ~&  [%next-build-state (turn ~(tap in next-builds.state) build-to-tape)]
         ::
         =?    ..execute
             ?=(^ previous-build)

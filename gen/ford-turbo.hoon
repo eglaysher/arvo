@@ -27,6 +27,7 @@
 ::  test-ride-scry-fail
 ::  test-ride-scry-block
   test-five-oh-fora
+  test-live-two-deep
 ==
 ++  test-is-schematic-live
   ~&  %test-is-schematic-live
@@ -365,8 +366,7 @@
               [%scry %c care=%x rail=[[~nul %desk] /bar/foo]]
           ==
       :*  %result  ~1234.5.6  %result  %same  %result  %pin  ~1234.5.6
-          
-      %result  %scry  %noun  !>(42)
+          %result  %scry  %noun  !>(42)
       ==
     ==
   ::
@@ -530,6 +530,67 @@
   %-  expect-eq  !>
   :-  state-by-ship.+>+<.ford
   (my [~nul *ford-state:ford-turbo]~)
+::
+
+
+
+++  test-live-two-deep
+  ~&  %test-live-two-deep
+  ::
+  =/  scry-42  (scry-succeed ~1234.5.6 [%noun !>(42)])
+  =/  scry-43  (scry-succeed ~1234.5.7 [%noun !>(43)])
+  ::
+  =/  ford  (ford-turbo now=~1234.5.6 eny=0xdead.beef scry=scry-42)
+  ::
+  =^  moves  ford
+    %-  call:ford
+    :*  duct=~  type=~  %make  ~nul
+        [%same [%scry %c care=%x rail=[[~nul %desk] /bar/foo]]]
+    ==
+  %+  welp
+    %-  expect-eq  !>
+    :-  moves
+    :~  :*  duct=~  %give  %made  ~1234.5.6  %complete  %result
+            %same  %result  [%scry %noun !>(42)]
+        ==
+        :*  duct=~  %pass  wire=/~nul/clay-sub/~nul/desk
+            %c  %warp  [~nul ~nul]  %desk
+            `[%mult [%da ~1234.5.6] (sy [%x /foo/bar]~)]
+    ==  ==
+  ::
+  =.  ford  (ford now=~1234.5.7 eny=0xbeef.dead scry=scry-43)
+  =^  moves2  ford
+    %-  take:ford
+    :*  wire=/~nul/clay-sub/~nul/desk  duct=~
+        ^=  wrapped-sign  ^-  (hypo sign:ford)  :-  *type
+        [%c %wris [%da ~1234.5.7] (sy [%x /foo/bar]~)]
+    ==
+  %+  welp
+    %-  expect-eq  !>
+    :-  moves2
+    :~  :*  duct=~  %give  %made  ~1234.5.7  %complete  %result
+            %same  %result  [%scry %noun !>(43)]
+        ==
+        :*  duct=~  %pass  wire=/~nul/clay-sub/~nul/desk
+            %c  %warp  [~nul ~nul]  %desk
+            `[%mult [%da ~1234.5.7] (sy [%x /foo/bar]~)]
+    ==  ==
+  ::
+  =.  ford  (ford now=~1234.5.8 eny=0xbeef.dead scry=scry-is-forbidden)
+  =^  moves3  ford
+    (call:ford [duct=~ type=~ %kill ~nul])
+  ::
+  %+  welp
+    %-  expect-eq  !>
+    :-  moves3
+    :~  :*  duct=~  %pass  wire=/~nul/clay-sub/~nul/desk
+            %c  %warp  [~nul ~nul]  %desk  ~
+    ==  ==
+  ::
+  %-  expect-eq  !>
+  :-  state-by-ship.+>+<.ford
+  (my [~nul *ford-state:ford-turbo]~)
+
 ::
 ++  test-slim
   ~&  %test-slim
@@ -796,7 +857,28 @@
       contents="post-a-contents-changed"
     ==
   ::
-  ~
+  =.  ford  (ford now=~1234.5.9 eny=0xbeef.dead scry=scry-is-forbidden)
+  ::
+  =^  moves4  ford  (call:ford [duct=~[/post-b] type=~ %kill ~nul])
+  ::
+  %+  welp
+    %-  expect-eq  !>
+    [moves4 ~]
+  ::
+  =.  ford  (ford now=~1234.5.10 eny=0xbeef.dead scry=scry-is-forbidden)
+  ::
+  =^  moves5  ford  (call:ford [duct=~[/post-a] type=~ %kill ~nul])
+  ::
+  %+  welp
+    %-  expect-eq  !>
+    :-  moves5
+    :~  :*  duct=~  %pass  wire=/~nul/clay-sub/~nul/desk
+            %c  %warp  [~nul ~nul]  %desk  ~
+    ==  ==
+  ::
+  %-  expect-eq  !>
+  :-  state-by-ship.+>+<.ford
+  (my [~nul *ford-state:ford-turbo]~)
 ::
 ::  |utilities: helper arms
 ::
