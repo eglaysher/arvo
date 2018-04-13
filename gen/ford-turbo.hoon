@@ -7,25 +7,26 @@
 |^
 ^-  wall
 ;:  weld
-  test-is-schematic-live
-  test-date-from-schematic
-  test-unify-jugs
-  test-dependency-wire-encoding
-  test-literal
-  test-autocons-same
-  test-autocons-different
-  test-scry-clay-succeed
-  test-scry-clay-fail
-  test-scry-clay-block
-  test-scry-clay-live
-  test-pinned-in-live
-  test-live-build-that-blocks
-  test-live-and-once
-  test-slim
-  test-ride
-  test-ride-scry-succeed
-  test-ride-scry-fail
-  test-ride-scry-block
+::  test-is-schematic-live
+::  test-date-from-schematic
+::  test-unify-jugs
+::  test-dependency-wire-encoding
+::  test-literal
+::  test-autocons-same
+::  test-autocons-different
+::  test-scry-clay-succeed
+::  test-scry-clay-fail
+::  test-scry-clay-block
+::  test-scry-clay-live
+::  test-pinned-in-live
+::  test-live-build-that-blocks
+::  test-live-and-once
+::  test-slim
+::  test-ride
+::  test-ride-scry-succeed
+::  test-ride-scry-fail
+::  test-ride-scry-block
+  test-five-oh-fora
 ==
 ++  test-is-schematic-live
   ~&  %test-is-schematic-live
@@ -364,7 +365,8 @@
               [%scry %c care=%x rail=[[~nul %desk] /bar/foo]]
           ==
       :*  %result  ~1234.5.6  %result  %same  %result  %pin  ~1234.5.6
-          %result  %scry  %noun  !>(42)
+          
+      %result  %scry  %noun  !>(42)
       ==
     ==
   ::
@@ -711,10 +713,151 @@
   :-  state-by-ship.+>+<.ford
   (my [~nul *ford-state:ford-turbo]~)
 ::
+++  test-five-oh-fora
+  ~&  %test-five-oh-fora
+  ::
+  =/  scry-results=(map [term beam] cage)
+    %-  my  :~
+      :-  [%cx [[~nul %desk %da ~1234.5.6] /a/posts]]
+      [%noun !>([title='post-a' contents="post-a-contents"])]
+    ::
+      :-  [%cx [[~nul %desk %da ~1234.5.6] /b/posts]]
+      [%noun !>([title='post-b' contents="post-b-contents"])]
+    ::
+      :-  [%cx [[~nul %desk %da ~1234.5.8] /a/posts]]
+      [%noun !>([title='post-a' contents="post-a-contents-changed"])]
+    ==
+  ::
+  =/  scry  (scry-with-results scry-results)
+  =/  ford  (ford-turbo now=~1234.5.6 eny=0xdead.beef scry=scry)
+  ::
+  =/  post-a=schematic:ford  [%scry [%c %x [~nul %desk] /a/posts]]
+  =/  title-a=schematic:ford  [%ride (ream '!:  title') post-a]
+  ::
+  =/  post-b=schematic:ford  [%scry [%c %x [~nul %desk] /b/posts]]
+  =/  title-b=schematic:ford  [%ride (ream '!:  title') post-b]
+  ::
+  =/  sidebar=schematic:ford  [title-a title-b]
+  ::
+  =/  rendered-a=schematic:ford  [post-a sidebar]
+  =/  rendered-b=schematic:ford  [post-b sidebar]
+  ::  first, ask ford to build rendered-a
+  ::
+  =^  moves  ford  (call:ford [duct=~[/post-a] type=~ %make ~nul rendered-a])
+  ::
+  ?>  ?=([^ ^ ~] moves)
+  %+  welp
+    %-  check-post-made  :*
+      move=i.moves
+      duct=~[/post-a]
+      date=~1234.5.6
+      title='post-a'
+      contents="post-a-contents"
+    ==
+  %+  welp
+    %-  expect-eq  !>
+    :-  i.t.moves
+    :*  duct=~  %pass  wire=/~nul/clay-sub/~nul/desk
+        %c  %warp  [~nul ~nul]  %desk
+        `[%mult [%da ~1234.5.6] (sy [%x /posts/a] [%x /posts/b] ~)]
+    ==
+  ::
+  =.  ford  (ford now=~1234.5.7 eny=0xbeef.dead scry=scry)
+  ::
+  =^  moves2  ford  (call:ford [duct=~[/post-b] type=~ %make ~nul rendered-b])
+  ::
+  ?>  ?=([^ ~] moves2)
+  %+  welp
+    %-  check-post-made  :*
+      move=i.moves2
+      duct=~[/post-b]
+      date=~1234.5.7
+      title='post-b'
+      contents="post-b-contents"
+    ==
+  ::
+  =.  ford  (ford now=~1234.5.8 eny=0xbeef.dead scry=scry)
+  ::
+  =^  moves3  ford
+    %-  take:ford
+    :*  wire=/~nul/clay-sub/~nul/desk  duct=~
+        ^=  wrapped-sign  ^-  (hypo sign:ford)  :-  *type
+        [%c %wris [%da ~1234.5.8] (sy [%x /posts/a]~)]
+    ==
+  ::
+  ~&  moves3
+  ?>  ?=([^ ^ ~] moves3)
+  %+  welp
+    %-  check-post-made  :*
+      move=i.moves3
+      duct=~[/post-a]
+      date=~1234.5.8
+      title='post-a'
+      contents="post-a-contents-changed"
+    ==
+  ::
+  ~
+::
 ::  |utilities: helper arms
 ::
 ::+|  utilities
+++  check-post-made
+  |=  $:  move=move:ford-turbo
+          =duct
+          date=@da
+          title=@tas
+          contents=tape
+      ==
+  ^-  wall
+  ::
+  ?>  ?=([* %give %made @da %complete %result ^ *] move)
+  =/  result  result.p.card.move
+  ?>  ?=([%result %scry %noun type-a=* @tas *] head.result)
+  ?>  ?=([%result ^ *] tail.result)
+  ?>  ?=([%result %ride type-title-a=* %post-a] head.tail.result)
+  ?>  ?=([%result %ride type-title-b=* %post-b] tail.tail.result)
+  ::
+  ;:  welp
+    %-  expect-eq  !>
+    [duct.move duct]
+  ::
+    %-  expect-eq  !>
+    [date.p.card.move date]
+  ::
+    %-  expect-eq  !>
+    :-  head.result(p.q.cage *type)
+    [%result %scry %noun *type [title=title contents=contents]]
+  ::
+    %-  expect-eq  !>
+    :-  (~(nest ut p.q.cage.head.result) | -:!>([title='' contents=""]))
+    &
+  ::
+    %-  expect-eq  !>
+    :-  head.tail.result(p.vase *type)
+    [%result %ride *type 'post-a']
+  ::
+    %-  expect-eq  !>
+    :-  (~(nest ut p.vase.head.tail.result) | -:!>(''))
+    &
+  ::
+    %-  expect-eq  !>
+    :-  tail.tail.result(p.vase *type)
+    [%result %ride *type 'post-b']
+  ::
+    %-  expect-eq  !>
+    :-  (~(nest ut p.vase.tail.tail.result) | -:!>(''))
+    &
+  ==
 ::
+::  +scry-with-results
+++  scry-with-results
+  |=  results=(map [=term =beam] cage)
+  |=  [* (unit (set monk)) =term =beam]
+  ^-  (unit (unit cage))
+  ::
+  ~|  scry-with-results+[term=term beam=beam]
+  ::
+  [~ ~ (~(got by results) [term beam])]
 ::  +scry-succeed: produces a scry function with a known request and answer
 ::
 ++  scry-succeed
@@ -759,4 +902,5 @@
   ::
   ~|  scry-is-forbidden+[beam+beam term+term]
   !!
---
+
+  --
