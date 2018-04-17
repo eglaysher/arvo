@@ -941,6 +941,12 @@
       ::    component linkages and cache access times.
       ::
       sub-builds=(list build)
+      ::  clear-sub-builds: replace previous sub-builds with :sub-builds
+      ::
+      ::    Some schematics will completely rerun their dependency registration,
+      ::    but others will need to add to their previous dependencies.
+      ::
+      clear-sub-builds=?
   ==
 
 ::  +vane: short names for vanes
@@ -1586,23 +1592,23 @@
         ..^$
       ::
       =/  new-subs  (turn old-subs |=(^build +<(date date.build)))
-      ::  link all :new-subs to :build in :components.state
-      ::
-      =.  state
-        %+  roll  new-subs
-        ::
-        |=  [new-sub=^build state=_state]
-        ::
-        %_    state
-            sub-builds.components
-          (~(put ju sub-builds.components.state) build new-sub)
-        ::
-            client-builds.components
-          (~(put ju client-builds.components.state) new-sub build)
-        ==
       ::  if all subs are in old.rebuilds.state, promote ourselves
       ::
       ?:  (levy new-subs ~(has in old.rebuilds.state))
+        ::  link all :new-subs to :build in :components.state
+        ::
+        =.  state
+          %+  roll  new-subs
+          ::
+          |=  [new-sub=^build state=_state]
+          ::
+          %_    state
+              sub-builds.components
+            (~(put ju sub-builds.components.state) build new-sub)
+          ::
+              client-builds.components
+            (~(put ju client-builds.components.state) new-sub build)
+          ==
         =^  wiped-rebuild  ..execute  (promote-build u.old-build date.build)
         =?    next-builds.state
             ?=(^ wiped-rebuild)
@@ -1740,6 +1746,7 @@
         ::
         =/  dependency=dependency  dependency.schematic.build.made
         =/  disc=disc  (extract-disc dependency)
+        ~&  [%reduce-disc disc]
         ::
         %_    ..execute
         ::  link :disc to :dependency
@@ -1764,10 +1771,11 @@
         ==
       ::  clear the components
       ::
-      ::    TODO: We'll need something like this when we implement %alts,
-      ::    but as written, this breaks test-ride-scry-block.
-      ::
-      ::=.  components.state  (unlink-sub-builds build.made)
+      =?    ..execute
+          clear-sub-builds.made
+        ::  ~&  [%clearing-sub-builds (~(get by sub-builds.components.state) build.made)]
+        ::  ~&  [%build-listeners listeners.state]
+        (unlink-sub-builds build.made)
       ::  process :sub-builds.made
       ::
       =.  state
@@ -1803,6 +1811,7 @@
           ::
           (~(put by listeners.state) sub-build unified-listeners)
         ==
+      ::  ~&  [%sub-builds (~(get by sub-builds.components.state) build.made)]
       ::
       ?-    -.result.made
           %build-result
@@ -2015,7 +2024,7 @@
             %$  (literal literal.schematic.build)
         ::
             %pin   (pin [date schematic]:schematic.build)
-            %alts  !!
+            %alts  (alts choices.schematic.build)
             %bake  !!
             %bunt  !!
             %call  !!
@@ -2059,18 +2068,18 @@
       ::
       ?^  blocks
         ::
-        [build [%blocks blocks ~] accessed-builds]
+        [build [%blocks blocks ~] accessed-builds |]
       ::
       ?<  ?=(~ head-result)
       ?<  ?=(~ tail-result)
       ::
-      =-  [build [%build-result -] accessed-builds]
+      =-  [build [%build-result -] accessed-builds |]
       `build-result`[%result u.head-result u.tail-result]
     ::
     ++  literal
       |=  =cage
       ^-  state-diff
-      [build [%build-result %result %$ cage] accessed-builds]
+      [build [%build-result %result %$ cage] accessed-builds |]
     ::
     ++  pin
       |=  [date=@da =schematic]
@@ -2079,8 +2088,28 @@
       =^  result  accessed-builds  (depend-on schematic)
       ::
       ?~  result
-        [build [%blocks [date schematic]~ ~] accessed-builds]
-      [build [%build-result %result %pin date u.result] accessed-builds]
+        [build [%blocks [date schematic]~ ~] accessed-builds |]
+      [build [%build-result %result %pin date u.result] accessed-builds |]
+    ::
+    ++  alts
+      |=  choices=(list schematic)
+      ^-  state-diff
+      ::
+      ?~  choices
+        :*  build
+            [%build-result %error [leaf+"%alts: all options failed"]~]
+            accessed-builds
+            &
+        ==
+      ::
+      =^  result  accessed-builds  (depend-on i.choices)
+      ?~  result
+        [build [%blocks [date.build i.choices]~ ~] accessed-builds &]
+      ::
+      ?:  ?=([%error *] u.result)
+        $(choices t.choices)
+      ::
+      [build [%build-result %result %alts u.result] accessed-builds &]
     ::
     ++  ride
       |=  [formula=hoon =schematic]
@@ -2088,19 +2117,21 @@
       ::
       =^  result  accessed-builds  (depend-on schematic)
       ?~  result
-        [build [%blocks [date.build schematic]~ ~] accessed-builds]
+        [build [%blocks [date.build schematic]~ ~] accessed-builds |]
       ::
       =*  subject  u.result
       =*  subject-cage  (result-to-cage subject)
       =/  slim-schematic=^schematic  [%slim p.q.subject-cage formula]
       =^  slim-result  accessed-builds  (depend-on slim-schematic)
       ?~  slim-result
-        [build [%blocks [date.build slim-schematic]~ ~] accessed-builds]
+        [build [%blocks [date.build slim-schematic]~ ~] accessed-builds |]
       ::
       ?:  ?=(%error -.u.slim-result)
-        :-  build
-        :_  accessed-builds
-        [%build-result %error [%leaf "%ride: "] message.u.slim-result]
+        :*  build
+            [%build-result %error [%leaf "%ride: "] message.u.slim-result]
+            accessed-builds
+            |
+        ==
       ::
       ?>  ?=([%result %slim *] u.slim-result)
       ::
@@ -2111,9 +2142,11 @@
       ?-    -.val
       ::
           %0
-        :-  build
-        :-  [%build-result %result %ride [type.u.slim-result p.val]]
-        accessed-builds
+        :*  build
+            [%build-result %result %ride [type.u.slim-result p.val]]
+            accessed-builds
+            |
+        ==
       ::
           %1
         =/  blocked-paths=(list path)  ((hard (list path)) p.val)
@@ -2154,7 +2187,7 @@
         ?^  failed
           ::  some failed
           ::
-          [build [%build-result %error failed] accessed-builds]
+          [build [%build-result %error failed] accessed-builds |]
         ::  no failures
         ::
         =/  blocks=(list ^build)
@@ -2174,11 +2207,11 @@
         ::  be passing one or multiple dependency back instead? Maybe not? Are
         ::  we building blocking schematics, which they themselves will scry?
         ::
-        [build [%blocks blocks ~] accessed-builds]
+        [build [%blocks blocks ~] accessed-builds |]
       ::
           %2
         =/  message=tang  [[%leaf "ford: %ride failed:"] p.val]
-        [build [%build-result %error message] accessed-builds]
+        [build [%build-result %error message] accessed-builds |]
       ==
     ::
     ++  same
@@ -2188,8 +2221,8 @@
       =^  result  accessed-builds  (depend-on schematic)
       ::
       ?~  result
-        [build [%blocks [date.build schematic]~ ~] accessed-builds]
-      [build [%build-result %result %same u.result] accessed-builds]
+        [build [%blocks [date.build schematic]~ ~] accessed-builds |]
+      [build [%build-result %result %same u.result] accessed-builds |]
     ::
     ++  scry
       ::  TODO: All accesses to :state which matter happens in this function;
@@ -2227,9 +2260,9 @@
         ?:  already-blocked
           ::  this dependency was already blocked, so don't duplicate move
           ::
-          [build [%blocks ~ ~] accessed-builds]
+          [build [%blocks ~ ~] accessed-builds |]
         ::
-        [build [%blocks ~ `dependency] accessed-builds]
+        [build [%blocks ~ `dependency] accessed-builds |]
       ::  scry failed
       ::
       ?~  u.scry-response
@@ -2237,10 +2270,10 @@
           :~  leaf+"scry failed for"
               leaf+"%c{(trip care.dependency)} {<(en-beam beam)>}"
           ==
-        [build [%build-result %error error] accessed-builds]
+        [build [%build-result %error error] accessed-builds |]
       ::  scry succeeded
       ::
-      [build [%build-result %result %scry u.u.scry-response] accessed-builds]
+      [build [%build-result %result %scry u.u.scry-response] accessed-builds |]
     ::
     ++  slim
       |=  [subject-type=type formula=hoon]
@@ -2248,11 +2281,13 @@
       =/  compiled=(each (pair type nock) tang)
         (mule |.((~(mint ut subject-type) [%noun formula])))
       ::
-      :-  build
-      :_  accessed-builds
-      ?-  -.compiled
-        %|  [%build-result %error [leaf+"%slim failed: " p.compiled]]
-        %&  [%build-result %result %slim p.compiled]
+      :*  build
+          ?-  -.compiled
+            %|  [%build-result %error [leaf+"%slim failed: " p.compiled]]
+            %&  [%build-result %result %slim p.compiled]
+          ==
+          accessed-builds
+          |
       ==
     ::  |utilities:make: helper arms
     ::
@@ -2395,23 +2430,30 @@
   ::
   ++  unlink-sub-builds
     |=  =build
-    ^+  components.state
+    ^+  ..execute
     ::
     =/  kids=(list ^build)
       ~(tap in (~(get ju sub-builds.components.state) build))
-
-    %_    components.state
-    ::  remove the mapping from :build to its sub-builds
     ::
-        sub-builds
-      (~(del by sub-builds.components.state) build)
-    ::  for each +build in :kids, remove :build from its clients
+    =.  components.state
+      %_    components.state
+      ::  remove the mapping from :build to its sub-builds
+      ::
+          sub-builds
+        (~(del by sub-builds.components.state) build)
+      ::  for each +build in :kids, remove :build from its clients
+      ::
+          client-builds
+        %+  roll  kids
+        |=  [kid=^build clients=_client-builds.components.state]
+        (~(del ju clients) kid build)
+      ==
     ::
-        client-builds
-      %+  roll  kids
-      |=  [kid=^build clients=_client-builds.components.state]
-      (~(del ju clients) kid build)
-    ==
+    %+  roll  kids
+    |=  [kid=^build accumulator=_..execute]
+    ::
+    =.  ..execute  accumulator
+    (cleanup kid)
   ::  +promote-live-listeners: move live listeners from :old to :new
   ::
   ++  promote-live-listeners
@@ -2556,6 +2598,7 @@
     =<  [(flop moves) state]
     ::
     =/  discs  ~(tap in dirty-discs)
+    ~&  [%finalize-discs discs]
     ::
     |-  ^+  this
     ?~  discs  this
@@ -2650,13 +2693,14 @@
             (~(has by old.rebuilds.state) build)
             (~(has by listeners.state) build)
         ==
-::  ~&  :*  %cleanup-no-op
-::          build=(build-to-tape build)
-::          has-client-builds=(~(has by client-builds.components.state) build)
-::          has-old-rebuilds=(~(has by old.rebuilds.state) build)
-::          listeners=(~(get by listeners.state) build)
-::      ==
+      ::  ~&  :*  %cleanup-no-op
+      ::          build=(build-to-tape build)
+      ::          has-client-builds=(~(has by client-builds.components.state) build)
+      ::          has-old-rebuilds=(~(has by old.rebuilds.state) build)
+      ::          listeners=(~(get by listeners.state) build)
+      ::      ==
       this
+    ::  ~&  [%cleaning-up (build-to-tape build)]
     ::  remove :build from :state, starting with its cache line
     ::
     =.  results.state  (~(del by results.state) build)
@@ -2713,15 +2757,13 @@
         (~(del ju dependencies.state) disc dependency)
       ::
       =?  dirty-discs  should-delete-dependency
+        ~&  [%cleanup-disc disc]
         (~(put in dirty-discs) disc)
       ::
       this
-    ::  kids: :build's sub-builds
+    ::  this also recurses on our children
     ::
-    =/  kids=(list ^build)
-      ~(tap in (~(get ju sub-builds.components.state) build))
-    ::
-    =.  components.state  (unlink-sub-builds build)
+    =.  ..execute  (unlink-sub-builds build)
     ::  if there is a newer rebuild of :build, delete the linkage
     ::
     =/  rebuild  (~(get by new.rebuilds.state) build)
@@ -2730,12 +2772,6 @@
         new  (~(del by new.rebuilds.state) build)
         old  (~(del by old.rebuilds.state) u.rebuild)
       ==
-    ::  recurse on :kids
-    ::
-    =.  this
-      %+  roll  kids
-      |=  [kid=^build that=_this]
-      (cleanup:that kid)
     ::  recurse on :rebuild; note this must be done after recursing on :kids
     ::
     ?~  rebuild

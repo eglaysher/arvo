@@ -29,6 +29,7 @@
   test-ride-scry-block
   test-ride-scry-promote
   test-five-oh-fora
+::  test-alts
 ==
 ++  test-is-schematic-live
   ~&  %test-is-schematic-live
@@ -943,6 +944,98 @@
   :-  state-by-ship.+>+<.ford
   (my [~nul *ford-state:ford-turbo]~)
 ::
+++  test-alts
+  ~&  %test-alts
+  ::
+  =/  scry-type=type  [%atom %tas ~]
+  ::
+  =/  scry-results=(map [term beam] (unit cage))
+    %-  my  :~
+      :-  [%cx [[~nul %first %da ~1234.5.6] /one/scry]]
+      ~
+    ::
+      :-  [%cx [[~nul %second %da ~1234.5.6] /two/scry]]
+      ~
+    ::
+      :-  [%cx [[~nul %first %da ~1234.5.7] /one/scry]]
+      ~
+    ::
+      :-  [%cx [[~nul %second %da ~1234.5.7] /two/scry]]
+      `[%noun scry-type 'scry-two']
+    ::
+      :-  [%cx [[~nul %first %da ~1234.5.8] /one/scry]]
+      `[%noun scry-type 'scry-one']
+    ==
+  ::
+  =/  scry  (scry-with-results-and-failures scry-results)
+  =/  ford  (ford-turbo now=~1234.5.6 eny=0xdead.beef scry=scry)
+  ::
+  =/  scry1=schematic:ford  [%scry [%c %x [~nul %first] /one/scry]]
+  =/  scry2=schematic:ford  [%scry [%c %x [~nul %second] /two/scry]]
+  =/  alts=schematic:ford   [%alts [scry1 scry2 ~]]
+  ::
+  ~&  %first-----------------first
+  =^  moves  ford  (call:ford [duct=~[/alts] type=~ %make ~nul alts])
+  ::
+  %+  welp
+    %-  expect-eq  !>
+    :-  moves
+    :~  :*  duct=~[/alts]  %give  %made  ~1234.5.6  %complete
+            [%error [%leaf "%alts: all options failed"]~]
+        ==
+        :*  duct=~  %pass  wire=/~nul/clay-sub/~nul/first
+            %c  %warp  [~nul ~nul]  %first
+            `[%mult [%da ~1234.5.6] (sy [%x /scry/one] ~)]
+        ==
+        :*  duct=~  %pass  wire=/~nul/clay-sub/~nul/second
+            %c  %warp  [~nul ~nul]  %second
+            `[%mult [%da ~1234.5.6] (sy [%x /scry/two] ~)]
+    ==  ==
+  ::
+  ~&  %second-----------------second
+  =.  ford  (ford now=~1234.5.7 eny=0xdead.beef scry=scry)
+  ::
+  =^  moves2  ford
+    %-  take:ford
+    :*  wire=/~nul/clay-sub/~nul/second  duct=~
+        ^=  wrapped-sign  ^-  (hypo sign:ford)  :-  *type
+        [%c %wris [%da ~1234.5.7] (sy [%x /scry/two]~)]
+    ==
+  ::
+  %+  welp
+    %-  expect-eq  !>
+    :-  moves2
+    :~  :*  duct=~[/alts]  %give  %made  ~1234.5.7  %complete
+            %result  %alts  %result  %scry  %noun  scry-type  'scry-two'
+        ==
+        :*  duct=~  %pass  wire=/~nul/clay-sub/~nul/second
+            %c  %warp  [~nul ~nul]  %second
+            `[%mult [%da ~1234.5.7] (sy [%x /scry/two] ~)]
+    ==  ==
+  ::
+  ~&  %third-----------------third
+  =.  ford  (ford now=~1234.5.8 eny=0xdead.beef scry=scry)
+  ::
+  =^  moves3  ford
+    %-  take:ford
+    :*  wire=/~nul/clay-sub/~nul/first  duct=~
+        ^=  wrapped-sign  ^-  (hypo sign:ford)  :-  *type
+        [%c %wris [%da ~1234.5.8] (sy [%x /scry/one]~)]
+    ==
+  ::
+  %+  welp
+    %-  expect-eq  !>
+    :-  moves3
+    :~  :*  duct=~[/alts]  %give  %made  ~1234.5.8  %complete
+            %result  %alts  %result  %scry  %noun  scry-type  'scry-one'
+        ==
+        :*  duct=~  %pass  wire=/~nul/clay-sub/~nul/first
+            %c  %warp  [~nul ~nul]  %first
+            `[%mult [%da ~1234.5.8] (sy [%x /scry/one] ~)]
+    ==  ==
+  ::
+  `wall`~
+::
 ::  |utilities: helper arms
 ::
 ::+|  utilities
@@ -1003,6 +1096,16 @@
   ~|  scry-with-results+[term=term beam=beam]
   ::
   [~ ~ (~(got by results) [term beam])]
+::  +scry-with-results-and-failures
+::
+++  scry-with-results-and-failures
+  |=  results=(map [=term =beam] (unit cage))
+  |=  [* (unit (set monk)) =term =beam]
+  ^-  (unit (unit cage))
+  ::
+  ~|  scry-with-results+[term=term beam=beam]
+  ::
+  [~ (~(got by results) [term beam])]
 ::  +scry-succeed: produces a scry function with a known request and answer
 ::
 ++  scry-succeed
