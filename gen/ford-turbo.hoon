@@ -7,28 +7,26 @@
 |^
 ^-  wall
 ;:  weld
-test-is-schematic-live
-test-date-from-schematic
-test-unify-jugs
-test-dependency-wire-encoding
-test-literal
-test-autocons-same
-test-autocons-different
-test-scry-clay-succeed
-test-scry-clay-fail
-test-scry-clay-block
-test-scry-clay-live
-test-pinned-in-live
-test-live-build-that-blocks
-test-live-and-once
-test-slim
-test-ride
-test-ride-scry-succeed
-test-ride-scry-fail
-test-ride-scry-block
-
-::  test-ride-scry-promote
-
+  test-is-schematic-live
+  test-date-from-schematic
+  test-unify-jugs
+  test-dependency-wire-encoding
+  test-literal
+  test-autocons-same
+  test-autocons-different
+  test-scry-clay-succeed
+  test-scry-clay-fail
+  test-scry-clay-block
+  test-scry-clay-live
+  test-pinned-in-live
+  test-live-build-that-blocks
+  test-live-and-once
+  test-slim
+  test-ride
+  test-ride-scry-succeed
+  test-ride-scry-fail
+  test-ride-scry-block
+  test-ride-scry-promote
 
 ::  test-five-oh-fora
   ::  test-live-two-deep
@@ -815,7 +813,7 @@ test-ride-scry-block
   ::
   =.  ford  (ford now=~1234.5.7 eny=0xbeef.dead scry=scry)
   ::
-  =^  moves3  ford
+  =^  moves2  ford
     %-  take:ford
     :*  wire=/~nul/clay-sub/~nul/desk  duct=~
         ^=  wrapped-sign  ^-  (hypo sign:ford)  :-  *type
@@ -824,14 +822,27 @@ test-ride-scry-block
   ::
   %+  welp
     %-  expect-eq  !>
-    :-  moves
+    :-  moves2
     :~  :*  duct=~  %pass  wire=/~nul/clay-sub/~nul/desk
             %c  %warp  [~nul ~nul]  %desk
             `[%mult [%da ~1234.5.7] (sy [%x /foo/bar] ~)]
     ==  ==
   ::
-  ~
-
+  ~&  %cancel--------cancel
+  =.  ford  (ford now=~1234.5.8 eny=0xbeef.dead scry=scry-is-forbidden)
+  =^  moves3  ford
+    (call:ford [duct=~[/ride] type=~ %kill ~nul])
+  ::
+  %+  welp
+    %-  expect-eq  !>
+    :-  moves3
+    :~  :*  duct=~  %pass  wire=/~nul/clay-sub/~nul/desk
+            %c  %warp  [~nul ~nul]  %desk  ~
+    ==  ==
+  ::
+  %-  expect-eq  !>
+  :-  state-by-ship.+>+<.ford
+  (my [~nul *ford-state:ford-turbo]~)
 ::
 ++  test-five-oh-fora
   ~&  %test-five-oh-fora

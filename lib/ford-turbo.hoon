@@ -1210,6 +1210,7 @@
     =.  builds  %+  ~(put by builds)  schematic.build
       ::
       ~|  build+build
+      ~&  [%by-schematic (turn ~(tap in ~(key by builds)) head)]
       =/  dates  (~(got by builds) schematic.build)
       =/  date-index  (need (find [date.build]~ dates))
       (oust [date-index 1] dates)
@@ -1660,6 +1661,8 @@
       ::
       =.  rebuilds.state  (link-rebuilds old-build new-build)
       ::
+      ?>  (~(has ju builds-by-date.state) date.new-build schematic.new-build)
+      ::
       =.  components.state
         %+  roll
           =-  ~(tap in (fall - ~))
@@ -1678,6 +1681,7 @@
       ::
       =.  state  (promote-live-listeners old-build new-build)
       ::
+      ~&  [%send-promote-mades build=(build-to-tape new-build)]
       =.  ..execute  (send-mades new-build (root-once-listeners new-build))
       ::
       =.  state  (delete-root-once-listeners new-build)
@@ -1717,6 +1721,7 @@
             ?&  ?=([~ %result *] result)
                 !=(build-result.u.result build-result.u.next-result)
             ==
+          ~&  [%send-future-mades build=(build-to-tape u.next)]
           (send-mades u.next (root-live-listeners u.next))
         ::
         $(build u.next)
@@ -1743,6 +1748,8 @@
         ::
         =/  dependency=dependency  dependency.schematic.build.made
         =/  disc=disc  (extract-disc dependency)
+        ::
+        ~&  [%live-scry-reduce build=(build-to-tape build.made) dependency=dependency]
         ::
         %_    ..execute
         ::  link :disc to :dependency
@@ -1810,6 +1817,8 @@
       ?-    -.result.made
           %build-result
         ::
+        ?>  (~(has ju builds-by-date.state) date.build.made schematic.build.made)
+        ::
         =.  results.state
           %+  ~(put by results.state)  build.made
           [%result last-accessed=now build-result.result.made]
@@ -1834,6 +1843,7 @@
         =?  state  &(?=(^ previous-build) ?=(^ previous-result))
           (promote-live-listeners u.previous-build build.made)
         ::
+        ~&  [%send-once-mades build=(build-to-tape build.made) listeners=(root-once-listeners build.made)]
         =.  ..execute  (send-mades build.made (root-once-listeners build.made))
         =.  state  (delete-root-once-listeners build.made)
         ::  if result is same as previous, note sameness
@@ -1854,31 +1864,49 @@
         ::
         =?    ..execute
             !same-result
-          ~&  %sending-made-different-result
+          ~&  [%sending-made-different-result build=(build-to-tape build.made)]
           (send-mades build.made (root-live-listeners build.made))
         ::  rerun any old clients, updated to the current time
         ::
-        =?    next-builds.state
+        =?    state
             &(!same-result ?=(^ previous-build))
           ::
-          %-  ~(gas in next-builds.state)
-          ::  =-  ~&  [%new-next-builds -]  -
-          %+  turn
-            %+  weld
+          =/  clients-to-rebuild=(list build)
+            %+  turn
+              %+  weld
+                =-  ~(tap in (fall - ~))
+                (~(get by client-builds.components.state) u.previous-build)
+              ::
+              =/  older-build  (~(get by old.rebuilds.state) u.previous-build)
+              ?~  older-build
+                ~
+              ::
               =-  ~(tap in (fall - ~))
-              (~(get by client-builds.components.state) u.previous-build)
+              (~(get by client-builds.components.state) u.older-build)
             ::
-            =/  older-build  (~(get by old.rebuilds.state) u.previous-build)
-            ?~  older-build
-              ~
-            ::
-            =-  ~(tap in (fall - ~))
-            (~(get by client-builds.components.state) u.older-build)
+            |=  old-client=build
+            old-client(date date.build.made)
           ::
-          |=  old-client=build
-          old-client(date date.build.made)
-        ::
-        ::  ~&  [%next-build-state (turn ~(tap in next-builds.state) build-to-tape)]
+          %+  roll  clients-to-rebuild
+          |=  [client=build state=_state]
+          ::
+          %_    state
+          ::
+              next-builds
+            (~(put in next-builds.state) client)
+          ::
+              client-builds.components
+            (~(put ju client-builds.components.state) build.made client)
+          ::
+              sub-builds.components
+            (~(put ju sub-builds.components.state) client build.made)
+          ::
+              builds-by-date
+            (~(put ju builds-by-date.state) date.client schematic.client)
+          ::
+              builds-by-schematic
+            (~(put by-schematic builds-by-schematic.state) client)
+          ==
         ::
         =?    ..execute
             ?=(^ previous-build)
@@ -2333,6 +2361,9 @@
     [~ ~ `(cask)`local-cage]
   ::  +mark-as-done: store :build as complete and produce any unblocked clients
   ::
+  ::    We may not know about these unblocked clients, so we register them in
+  ::    the state.
+  ::
   ++  mark-as-done
     |=  =build
     ^-  [(list ^build) _state]
@@ -2535,13 +2566,11 @@
     =/  mutant=cache-line  original(last-accessed now)
     ::
     [`mutant (~(put by results.state) build mutant)]
-  ::  +finalize: convert per-event state to moves and per sistent state
+  ::  +finalize: convert per-event state to moves and persistent state
   ::
   ::    Converts :done-live-roots to %made +move's, performs +duct
   ::    accounting, and runs +cleanup on completed once builds and
   ::    stale live builds.
-  ::
-  ::    TODO: needs rework to support live builds
   ::
   ++  finalize
     ^-  [(list move) ford-state]
@@ -2696,7 +2725,7 @@
         ^-  ?
         =/  other-build  [date schematic.build]
         =/  listeners=(set listener)
-          (fall (~(get by root-builds.state) other-build) ~)
+          (fall (~(get by listeners.state) other-build) ~)
         ::
         (lien ~(tap in listeners) is-listener-live)
       ::
