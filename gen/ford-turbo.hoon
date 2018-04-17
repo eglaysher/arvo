@@ -26,7 +26,8 @@
 ::  test-ride-scry-succeed
 ::  test-ride-scry-fail
 ::  test-ride-scry-block
-  test-five-oh-fora
+  test-ride-scry-promote
+::  test-five-oh-fora
   ::  test-live-two-deep
 ==
 ++  test-is-schematic-live
@@ -774,6 +775,61 @@
   :-  state-by-ship.+>+<.ford
   (my [~nul *ford-state:ford-turbo]~)
 ::
+++  test-ride-scry-promote
+  ~&  %test-ride-scry-promote
+  ::
+  =/  scry-type=type  [%atom %tas ~]
+  ::
+  =/  scry-results=(map [term beam] cage)
+    %-  my  :~
+      :-  [%cx [[~nul %desk %da ~1234.5.6] /bar/foo]]
+      [%noun scry-type %it-doesnt-matter]
+    ::
+      :-  [%cx [[~nul %desk %da ~1234.5.7] /bar/foo]]
+      [%noun scry-type %changed]
+    ==
+  ::
+  =/  scry  (scry-with-results scry-results)
+  =/  ford  (ford-turbo now=~1234.5.6 eny=0xdead.beef scry=scry)
+  ::
+  =/  formula=hoon  (ream '`@tas`%constant')
+  =/  subject-schematic=schematic:ford  [%scry %c %x [~nul %desk] /bar/foo]
+  ::
+  =/  ride=schematic:ford  [%ride formula subject-schematic]
+  ::
+  =^  moves  ford  (call:ford [duct=~[/ride] type=~ %make ~nul ride])
+  ::
+  %+  welp
+    %-  expect-eq  !>
+    :-  moves
+    :~  :*  duct=~[/ride]  %give  %made  ~1234.5.6  %complete
+            [%result [%ride scry-type %constant]]
+        ==
+        :*  duct=~  %pass  wire=/~nul/clay-sub/~nul/desk
+            %c  %warp  [~nul ~nul]  %desk
+            `[%mult [%da ~1234.5.6] (sy [%x /foo/bar] ~)]
+    ==  ==
+  ::
+  =.  ford  (ford now=~1234.5.7 eny=0xbeef.dead scry=scry)
+  ::
+  =^  moves3  ford
+    %-  take:ford
+    :*  wire=/~nul/clay-sub/~nul/desk  duct=~
+        ^=  wrapped-sign  ^-  (hypo sign:ford)  :-  *type
+        [%c %wris [%da ~1234.5.7] (sy [%x /foo/bar]~)]
+    ==
+  ::
+  %+  welp
+    %-  expect-eq  !>
+    :-  moves
+    :~  :*  duct=~  %pass  wire=/~nul/clay-sub/~nul/desk
+            %c  %warp  [~nul ~nul]  %desk
+            `[%mult [%da ~1234.5.7] (sy [%x /foo/bar] ~)]
+    ==  ==
+  ::
+  ~
+
+::
 ++  test-five-oh-fora
   ~&  %test-five-oh-fora
   ::
@@ -823,20 +879,20 @@
         `[%mult [%da ~1234.5.6] (sy [%x /posts/a] [%x /posts/b] ~)]
     ==
   ::
-  =.  ford  (ford now=~1234.5.7 eny=0xbeef.dead scry=scry)
-  ::
-  =^  moves2  ford  (call:ford [duct=~[/post-b] type=~ %make ~nul rendered-b])
-  ::
-  ?>  ?=([^ ~] moves2)
-  %+  welp
-    %-  check-post-made  :*
-      move=i.moves2
-      duct=~[/post-b]
-      date=~1234.5.7
-      title='post-b'
-      contents="post-b-contents"
-    ==
-  ::
+  ::  =.  ford  (ford now=~1234.5.7 eny=0xbeef.dead scry=scry)
+  ::  ::
+  ::  =^  moves2  ford  (call:ford [duct=~[/post-b] type=~ %make ~nul rendered-b])
+  ::  ::
+  ::  ?>  ?=([^ ~] moves2)
+  ::  %+  welp
+  ::    %-  check-post-made  :*
+  ::      move=i.moves2
+  ::      duct=~[/post-b]
+  ::      date=~1234.5.7
+  ::      title='post-b'
+  ::      contents="post-b-contents"
+  ::    ==
+  ::  ::
   =.  ford  (ford now=~1234.5.8 eny=0xbeef.dead scry=scry)
   ::
   =^  moves3  ford
@@ -857,13 +913,13 @@
       contents="post-a-contents-changed"
     ==
   ::
-  =.  ford  (ford now=~1234.5.9 eny=0xbeef.dead scry=scry-is-forbidden)
-  ::
-  =^  moves4  ford  (call:ford [duct=~[/post-b] type=~ %kill ~nul])
-  ::
-  %+  welp
-    %-  expect-eq  !>
-    [moves4 ~]
+  ::  =.  ford  (ford now=~1234.5.9 eny=0xbeef.dead scry=scry-is-forbidden)
+  ::  ::
+  ::  =^  moves4  ford  (call:ford [duct=~[/post-b] type=~ %kill ~nul])
+  ::  ::
+  ::  %+  welp
+  ::    %-  expect-eq  !>
+  ::    [moves4 ~]
   ::
   =.  ford  (ford now=~1234.5.10 eny=0xbeef.dead scry=scry-is-forbidden)
   ::
