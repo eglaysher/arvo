@@ -7,26 +7,29 @@
 |^
 ^-  wall
 ;:  weld
-::  test-is-schematic-live
-::  test-date-from-schematic
-::  test-unify-jugs
-::  test-dependency-wire-encoding
-::  test-literal
-::  test-autocons-same
-::  test-autocons-different
-::  test-scry-clay-succeed
-::  test-scry-clay-fail
-::  test-scry-clay-block
-::  test-scry-clay-live
-::  test-pinned-in-live
-::  test-live-build-that-blocks
-::  test-live-and-once
-::  test-slim
-::  test-ride
-::  test-ride-scry-succeed
-::  test-ride-scry-fail
-::  test-ride-scry-block
-  test-ride-scry-promote
+test-is-schematic-live
+test-date-from-schematic
+test-unify-jugs
+test-dependency-wire-encoding
+test-literal
+test-autocons-same
+test-autocons-different
+test-scry-clay-succeed
+test-scry-clay-fail
+test-scry-clay-block
+test-scry-clay-live
+test-pinned-in-live
+test-live-build-that-blocks
+test-live-and-once
+test-slim
+test-ride
+test-ride-scry-succeed
+test-ride-scry-fail
+test-ride-scry-block
+
+::  test-ride-scry-promote
+
+
 ::  test-five-oh-fora
   ::  test-live-two-deep
 ==

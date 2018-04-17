@@ -1767,7 +1767,10 @@
         ==
       ::  clear the components
       ::
-      =.  components.state  (unlink-sub-builds build.made)
+      ::    TODO: We'll need something like this when we implement %alts,
+      ::    but as written, this breaks test-ride-scry-block.
+      ::
+      ::=.  components.state  (unlink-sub-builds build.made)
       ::  process :sub-builds.made
       ::
       =.  state
@@ -2156,12 +2159,13 @@
           |=  [block=^build accumulator=_accessed-builds]
           =.  accessed-builds  accumulator
           +:(depend-on schematic.block)
-        ~&  %ride-blocked-on-scrys-in-build
         ::
         ::  TODO: Here we are passing a single ~ for :scry-blocked. Should we
         ::  be passing one or multiple dependency back instead? Maybe not? Are
         ::  we building blocking schematics, which they themselves will scry?
         ::
+        ~&  [%ride-blocked-on-scrys-in-build blocks=(turn blocks build-to-tape) accessed-builds=(turn accessed-builds build-to-tape)]
+
         [build [%blocks blocks ~] accessed-builds]
       ::
           %2
@@ -2405,6 +2409,7 @@
   ++  promote-live-listeners
     |=  [old=build new=build]
     ^+  state
+    ~&  [%promote-live-listeners old=(build-to-tape old) new=(build-to-tape new)]
     ::
     =/  old-live-listeners=(list listener)
       =-  (skim - is-listener-live)
