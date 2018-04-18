@@ -972,7 +972,7 @@
   %+  welp  " "
   ::
   ?+      -.schematic
-        (trip -.schematic)
+        :(welp "[" (trip -.schematic) " {<`@uvI`(mug schematic)>}]")
       ::
       %$
     "literal"
@@ -983,6 +983,9 @@
   ::
       %scry
     (spud (en-beam (extract-beam dependency.schematic ~)))
+  ::
+    ::    %slim
+    ::  "slim {<subject-type.schematic>} {<formula.schematic>}"
   ==
 ::  +unify-jugs: make a new jug, unifying sets for all keys
 ::
@@ -1139,25 +1142,6 @@
       %vale  cage.result
       %volt  cage.result
   ==
-::  +build-results-equal: check if two build results are the same value
-::
-::    We must perform a bidirectional nest check on the types because types
-::    aren't guaranteed to be equal; this isn't a problem because the result
-::    can be used equivalently.
-::
-++  build-results-equal
-  |=  [old=build-result new=build-result]
-  ^-  ?
-  ::
-  =+  old-cage=(result-to-cage old)
-  =+  new-cage=(result-to-cage new)
-  ::
-  ?&  =(p.old-cage p.new-cage)
-      =(q.q.old-cage q.q.new-cage)
-      (~(nest ut p.q.old-cage) | p.q.new-cage)
-      (~(nest ut p.q.new-cage) | p.q.old-cage)
-  ==
-
 ::  +date-from-schematic: finds the latest pin date from this schematic tree.
 ::
 ++  date-from-schematic
@@ -1472,16 +1456,15 @@
   ++  execute
     |=  builds=(set build)
     ^+  ..execute
-    ::  builds that we know we aren't going to be able to run this event
-    ::
-    =|  rejected-builds=(set build)
     ::
     |^  ^+  ..execute
         ::
         =.  candidate-builds.state
           (weld candidate-builds.state ~(tap in builds))
         ::
-        =.  ..$  gather
+        =.  ..execute  gather
+        ::
+        ~&  [%builds-to-run (turn ~(tap in next-builds.state) build-to-tape)]
         ::
         =/  state-diffs=(list state-diff)
           (turn ~(tap in next-builds.state) make)
@@ -1492,40 +1475,36 @@
     ::  +gather: collect builds to be run in a batch: wraps +gather-internal
     ::
     ++  gather
-      ^+  ..$
+      ^+  ..execute
       |-
       ::
       ?~  candidate-builds.state
-        ..^$
+        ..execute
+      ::
+      ~&  [%pre-gather-rebuilds (turn ~(tap in ~(key by old.rebuilds.state)) build-to-tape)]
       ::
       =/  next  i.candidate-builds.state
       =>  .(candidate-builds.state t.candidate-builds.state)
       ::
-      $(..^$ (gather-build next))
+      $(..execute (gather-build next))
 
     ::  +gather-build: looks at a single candidate build
     ::
     ::    This gate inspects a single build. It might move it to :next-builds,
     ::    or promote it using an old build. It also might add this builds
-    ::    sub-builds to :candidate-builds. Or it might move itself to
-    ::    :rejected-builds, which means we know it can't be run this pass
-    ::    through the event loop.
+    ::    sub-builds to :candidate-builds.
     ::
     ++  gather-build
       |=  =build
-      ^+  ..^$
+      ^+  ..execute
       ::  normalize :date.build for a %pin schematic
       ::
       =?  date.build  ?=(%pin -.schematic.build)  date.schematic.build
-      ::  check if we've already rejected this build for this event
-      ::
-      ?:  (~(has in rejected-builds) build)
-        ..^$
       ::  if we already have a result for this build, don't rerun the build
       ::
       =^  current-result  results.state  (access-cache build)
       ?:  ?=([~ %result *] current-result)
-        ..^$
+        ..execute
       ::  place :build in :state if it isn't already there
       ::
       =:  builds-by-date.state
@@ -1541,7 +1520,7 @@
       ::  if no previous builds exist, we need to run :build
       ::
       ?~  old-build
-        ..^$(next-builds.state (~(put in next-builds.state) build))
+        ..execute(next-builds.state (~(put in next-builds.state) build))
       ::  copy :old-build's live listeners
       ::
       =/  old-live-listeners=(list listener)
@@ -1560,41 +1539,29 @@
       ::  if any dependencies have changed, we need to rebuild :build
       ::
       ?:  (dependencies-changed build)
-        ..^$(next-builds.state (~(put in next-builds.state) build))
+        ..execute(next-builds.state (~(put in next-builds.state) build))
+      ~&  [%in-gather-rebuilds (turn ~(tap in ~(key by old.rebuilds.state)) build-to-tape)]
       ::  if we don't have :u.old-build's result cached, we need to run :build
       ::
       =^  old-cache-line  results.state  (access-cache u.old-build)
       ?~  old-cache-line
-        ..^$(next-builds.state (~(put in next-builds.state) build))
+        ..execute(next-builds.state (~(put in next-builds.state) build))
       ::  if :u.old-build's result has been wiped, we need to run :build
       ::
       ?:  ?=(%tombstone -.u.old-cache-line)
-        ..^$(next-builds.state (~(put in next-builds.state) build))
+        ..execute(next-builds.state (~(put in next-builds.state) build))
       ::  old-subs: sub-builds of :u.old-build
       ::
-      =/  old-subs-original=(list ^build)
+      =/  old-subs=(list ^build)
         ~(tap in (fall (~(get by sub-builds.components.state) u.old-build) ~))
-      ::  copy to avoid the tmi problem
-      ::
-      =/  old-subs  old-subs-original
-      ::  if :u.old-build had no sub-builds, promote it
-      ::
-      ?~  old-subs-original
-        =^  wiped-rebuild  ..execute  (promote-build u.old-build date.build)
-        =?    next-builds.state
-            ?=(^ wiped-rebuild)
-          (~(put in next-builds.state) u.wiped-rebuild)
-        ::
-        =^  unblocked-clients  state  (mark-as-done build)
-        =.  candidate-builds.state
-          (welp unblocked-clients candidate-builds.state)
-        ::
-        ..^$
       ::
       =/  new-subs  (turn old-subs |=(^build +<(date date.build)))
       ::  if all subs are in old.rebuilds.state, promote ourselves
       ::
-      ?:  (levy new-subs ~(has in old.rebuilds.state))
+      ?:  (levy new-subs ~(has by old.rebuilds.state))
+        ~&  [%all-subs-same (build-to-tape build)]
+::  WE'RE GOING TO WANT TO PRINT OUT WHAT IS HAPPENING HERE!!!!
+
         ::  link all :new-subs to :build in :components.state
         ::
         =.  state
@@ -1618,19 +1585,25 @@
         =.  candidate-builds.state
           (welp unblocked-clients candidate-builds.state)
         ::
-        ..^$
+        ..execute
       ::  all new-subs have results, some are not rebuilds
       ::
-      ?:  (levy new-subs is-build-cached)
+      =/  uncached-new-subs  (skip new-subs is-build-cached)
+      ?~  uncached-new-subs
+        ~&  [%late-gather-rebuilds (turn ~(tap in ~(key by old.rebuilds.state)) build-to-tape)]
+        ~&  [%all-subs-cached (build-to-tape build)]
+        ~&  [%raw-new-subs (turn new-subs build-to-tape)]
+        ~&  [%not-in-rebuilds (turn (skip new-subs ~(has by old.rebuilds.state)) build-to-tape)]
         ::
-        ..^$(next-builds.state (~(put in next-builds.state) build))
+        ..execute(next-builds.state (~(put in next-builds.state) build))
       ::  otherwise, not all new subs have results.
       ::
       ::    If all of our sub-builds finish immediately (i.e. promoted),
       ::    they'll add us back to :candidate-builds.state.
       ::
+      ~&  [%rebuilding-subs build=(build-to-tape build) (turn `(list ^build)`uncached-new-subs build-to-tape)]
       =.  blocked-builds.state
-        %+  roll  (skip new-subs is-build-cached)
+        %+  roll  `(list ^build)`uncached-new-subs
         |=  [new-sub=^build blocked-builds=_blocked-builds.state]
         ::
         %_    blocked-builds
@@ -1641,7 +1614,7 @@
           (~(put ju client-builds.blocked-builds) new-sub build)
         ==
       ::
-      ..^$(candidate-builds.state :(welp new-subs candidate-builds.state))
+      ..execute(candidate-builds.state :(welp uncached-new-subs candidate-builds.state))
     ::  +promote-build: promote result of :build to newer :date
     ::
     ::    Also promotes live listeners, links the two builds in :rebuilds.state,
@@ -1651,6 +1624,7 @@
     ++  promote-build
       |=  [old-build=build date=@da]
       ^-  [(unit build) _..execute]
+      ~&  [%promote-build (build-to-tape old-build) date=date]
       ::
       =^  old-cache-line  results.state  (access-cache old-build)
       ::
@@ -1746,7 +1720,7 @@
         ::
         =/  dependency=dependency  dependency.schematic.build.made
         =/  disc=disc  (extract-disc dependency)
-        ~&  [%reduce-disc disc]
+        ::  ~&  [%reduce-disc disc]
         ::
         %_    ..execute
         ::  link :disc to :dependency
@@ -1847,10 +1821,20 @@
         ::
         =/  same-result=?
           ?&  ?=([~ %result *] previous-result)
-              %+  build-results-equal
-                build-result.result.made
-              build-result.u.previous-result
+              =(build-result.result.made build-result.u.previous-result)
           ==
+::          ~?  ?&  ?=([~ *] previous-build)
+::                  ::  ?=([@da *] u.previous-build)
+::  ::                ?=([%slim *] schematic.u.previous-build)
+::                  ::  ?=([~ %result @da %result %slim *] previous-result)
+::                  ::  ?=([@da %slim *] build.made)
+::                  ::  ?=([%result %slim *] build-result.result.made)
+::              ==
+::            [%slim-hoon u.previous-build]
+          ::  [%slim-changed hoon-changed=!=(formula.schematic.u.previous-build formula.schematic.build.made)]
+        ~?  ?=([%error *] build-result.result.made)
+          %build-resulterror
+        ~&  [%new-result (build-to-tape build.made) previous=?=([~ %result *] previous-result) equals=same-result]
         ::
         =?    rebuilds.state
             same-result
@@ -2012,6 +1996,7 @@
   ++  make
     |=  =build
     ^-  state-diff
+    ~&  [%make (build-to-tape build)]
     ::  accessed-builds: builds accessed/depended on during this run.
     ::
     =|  accessed-builds=(list ^build)
@@ -2598,7 +2583,7 @@
     =<  [(flop moves) state]
     ::
     =/  discs  ~(tap in dirty-discs)
-    ~&  [%finalize-discs discs]
+    ::  ~&  [%finalize-discs discs]
     ::
     |-  ^+  this
     ?~  discs  this
@@ -2757,7 +2742,7 @@
         (~(del ju dependencies.state) disc dependency)
       ::
       =?  dirty-discs  should-delete-dependency
-        ~&  [%cleanup-disc disc]
+        ::  ~&  [%cleanup-disc disc]
         (~(put in dirty-discs) disc)
       ::
       this
