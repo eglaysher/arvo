@@ -773,6 +773,20 @@
           ::
           client-builds=(jug build build)
       ==
+      ::  provisional-components: expected linkage we can't prove yet
+      ::
+      ::    During the +gather step, we promote builds, but our promotion
+      ::    decisions may be wrong. We record our predictions here so we
+      ::    can undo them.
+      ::
+      $=  provisional-components
+      $:  ::  sub-builds: jug from a build to its sub-builds
+          ::
+          sub-builds=(jug build build)
+          ::  client-builds: jug from a build to its client builds
+          ::
+          client-builds=(jug build build)
+      ==
       ::  rebuilds: bidirectional links between old and new identical builds
       ::
       ::    Old and new build must have the same schematic and result.
@@ -1540,7 +1554,6 @@
       ::
       ?:  (dependencies-changed build)
         ..execute(next-builds.state (~(put in next-builds.state) build))
-      ~&  [%in-gather-rebuilds (turn ~(tap in ~(key by old.rebuilds.state)) build-to-tape)]
       ::  if we don't have :u.old-build's result cached, we need to run :build
       ::
       =^  old-cache-line  results.state  (access-cache u.old-build)
@@ -1560,8 +1573,6 @@
       ::
       ?:  (levy new-subs ~(has by old.rebuilds.state))
         ~&  [%all-subs-same (build-to-tape build)]
-::  WE'RE GOING TO WANT TO PRINT OUT WHAT IS HAPPENING HERE!!!!
-
         ::  link all :new-subs to :build in :components.state
         ::
         =.  state
@@ -1576,6 +1587,7 @@
               client-builds.components
             (~(put ju client-builds.components.state) new-sub build)
           ==
+        ::
         =^  wiped-rebuild  ..execute  (promote-build u.old-build date.build)
         =?    next-builds.state
             ?=(^ wiped-rebuild)
@@ -1586,22 +1598,33 @@
           (welp unblocked-clients candidate-builds.state)
         ::
         ..execute
+      ::  record sub-builds as provisional
+      ::
+      ::    When we can't directly promote ourselves, we're going to rerun
+      ::    our build. It's possible that the sub-builds are different, in
+      ::    which case we'll need to clean up the current sub-build dependency.
+      ~&  [%raw-new-subs (turn new-subs build-to-tape)]
+      =.  provisional-components.state
+        %+  roll  `(list ^build)`new-subs
+        |=  [new-sub=^build provisional-components=_provisional-components.state]
+        ::
+        %_    provisional-components
+            sub-builds
+          (~(put ju sub-builds.provisional-components) build new-sub)
+        ::
+            client-builds
+          (~(put ju client-builds.provisional-components) new-sub build)
+        ==
       ::  all new-subs have results, some are not rebuilds
       ::
       =/  uncached-new-subs  (skip new-subs is-build-cached)
       ?~  uncached-new-subs
-        ~&  [%late-gather-rebuilds (turn ~(tap in ~(key by old.rebuilds.state)) build-to-tape)]
-        ~&  [%all-subs-cached (build-to-tape build)]
-        ~&  [%raw-new-subs (turn new-subs build-to-tape)]
-        ~&  [%not-in-rebuilds (turn (skip new-subs ~(has by old.rebuilds.state)) build-to-tape)]
-        ::
         ..execute(next-builds.state (~(put in next-builds.state) build))
       ::  otherwise, not all new subs have results.
       ::
       ::    If all of our sub-builds finish immediately (i.e. promoted),
       ::    they'll add us back to :candidate-builds.state.
       ::
-      ~&  [%rebuilding-subs build=(build-to-tape build) (turn `(list ^build)`uncached-new-subs build-to-tape)]
       =.  blocked-builds.state
         %+  roll  `(list ^build)`uncached-new-subs
         |=  [new-sub=^build blocked-builds=_blocked-builds.state]
@@ -1614,7 +1637,10 @@
           (~(put ju client-builds.blocked-builds) new-sub build)
         ==
       ::
-      ..execute(candidate-builds.state :(welp uncached-new-subs candidate-builds.state))
+      %_    ..execute
+          candidate-builds.state
+        :(welp uncached-new-subs candidate-builds.state)
+      ==
     ::  +promote-build: promote result of :build to newer :date
     ::
     ::    Also promotes live listeners, links the two builds in :rebuilds.state,
@@ -1720,7 +1746,6 @@
         ::
         =/  dependency=dependency  dependency.schematic.build.made
         =/  disc=disc  (extract-disc dependency)
-        ::  ~&  [%reduce-disc disc]
         ::
         %_    ..execute
         ::  link :disc to :dependency
@@ -1747,8 +1772,6 @@
       ::
       =?    ..execute
           clear-sub-builds.made
-        ::  ~&  [%clearing-sub-builds (~(get by sub-builds.components.state) build.made)]
-        ::  ~&  [%build-listeners listeners.state]
         (unlink-sub-builds build.made)
       ::  process :sub-builds.made
       ::
@@ -1785,7 +1808,6 @@
           ::
           (~(put by listeners.state) sub-build unified-listeners)
         ==
-      ::  ~&  [%sub-builds (~(get by sub-builds.components.state) build.made)]
       ::
       ?-    -.result.made
           %build-result
@@ -1823,18 +1845,6 @@
           ?&  ?=([~ %result *] previous-result)
               =(build-result.result.made build-result.u.previous-result)
           ==
-::          ~?  ?&  ?=([~ *] previous-build)
-::                  ::  ?=([@da *] u.previous-build)
-::  ::                ?=([%slim *] schematic.u.previous-build)
-::                  ::  ?=([~ %result @da %result %slim *] previous-result)
-::                  ::  ?=([@da %slim *] build.made)
-::                  ::  ?=([%result %slim *] build-result.result.made)
-::              ==
-::            [%slim-hoon u.previous-build]
-          ::  [%slim-changed hoon-changed=!=(formula.schematic.u.previous-build formula.schematic.build.made)]
-        ~?  ?=([%error *] build-result.result.made)
-          %build-resulterror
-        ~&  [%new-result (build-to-tape build.made) previous=?=([~ %result *] previous-result) equals=same-result]
         ::
         =?    rebuilds.state
             same-result
@@ -1885,6 +1895,91 @@
           ::
               builds-by-schematic
             (~(put by-schematic builds-by-schematic.state) client)
+          ==
+        ::  clean up provisional builds: remove actual builds
+        ::
+        ::    The first step in provisional build cleanup is to remove
+        ::    sub-builds which were actually depended on from the provisional
+        ::    build set because they're no longer provisional.
+        ::
+        =.  provisional-components.state
+          %+  roll  sub-builds.made
+          |=  $:  sub-build=build
+                  provisional-components=_provisional-components.state
+              ==
+          ::
+          %_    provisional-components
+              sub-builds
+            (~(del ju sub-builds.provisional-components) build.made sub-build)
+          ::
+              client-builds
+            (~(del ju client-builds.provisional-components) sub-build build.made)
+          ==
+        ::
+        ::
+        ::  clean up provisional builds: remove orphans
+        ::
+        ::    Any builds left in :provisional-components.state for our build
+        ::    are orphaned builds. However, these builds may have other
+        ::    listeners and we don't want to delete those.
+        ::
+        =.  ..execute
+          %+  roll
+            =-  ~(tap in (fall - ~))
+            (~(get by sub-builds.provisional-components.state) build.made)
+          ::
+          |=  [sub-build=build accumulator=_..execute]
+          =.  ..execute  accumulator
+          ::  calculate the listeners to remove
+          ::
+          ::    Orphaned sub-builds have a set of listeners attached to them.
+          ::    We want to find the listeners which shouldn't be there and
+          ::    remove them.
+          ::
+          =/  provisional-clients
+            =-  ~(tap in (fall - ~))
+            (~(get by client-builds.provisional-components.state) sub-build)
+          ::
+          =/  provisional-listeners=(set listener)
+            %+  roll  provisional-clients
+            |=  [=build provisional-listeners=(set listener)]
+            ::
+            %-  ~(uni in provisional-listeners)
+            (fall (~(get by listeners.state) build) ~)
+          ::
+          ::  TODO: ~rovnys' plan wants to do additional checks with the
+          ::  provisional-listeners, but I'm skipping that for now, because
+          ::  I'm not entirely sure of it.
+          ::
+          ::  "To find these provisional listeners to delete, we gather the set
+          ::  of listeners  on the provisional client, and compare  that to the
+          ::  set of  listeners  unified from  the set  of  real clients.  Any
+          ::  listeners on  the  provisional  client that  are  not also  real
+          ::  listeners should be deleted from the build."
+          ::
+          ::  OK, but [duct ?] is the same on both. What happens in the diamond
+          ::  build case?
+          ::
+          =.  listeners.state
+            %+  roll  ~(tap in provisional-listeners)
+            |=  [=listener listeners=_listeners.state]
+            ::
+            (~(del ju listeners.state) sub-build listener)
+          ::
+          =.  ..execute  (cleanup sub-build)
+          ::  remove the orphaned build from provisional builds
+          ::
+          %_    ..execute
+          ::
+              sub-builds.provisional-components.state
+            %+  ~(del ju sub-builds.provisional-components.state)
+              build.made
+            sub-build
+          ::
+              client-builds.provisional-components.state
+            %+  ~(del ju client-builds.provisional-components.state)
+              sub-build
+            build.made
           ==
         ::
         =?    ..execute
@@ -2583,7 +2678,6 @@
     =<  [(flop moves) state]
     ::
     =/  discs  ~(tap in dirty-discs)
-    ::  ~&  [%finalize-discs discs]
     ::
     |-  ^+  this
     ?~  discs  this
@@ -2742,7 +2836,6 @@
         (~(del ju dependencies.state) disc dependency)
       ::
       =?  dirty-discs  should-delete-dependency
-        ::  ~&  [%cleanup-disc disc]
         (~(put in dirty-discs) disc)
       ::
       this

@@ -7,31 +7,31 @@
 |^
 ^-  wall
 ;:  weld
-  ::  test-is-schematic-live
-  ::  test-date-from-schematic
-  ::  test-unify-jugs
-  ::  test-dependency-wire-encoding
-  ::  test-literal
-  ::  test-autocons-same
-  ::  test-autocons-different
-  ::  test-scry-clay-succeed
-  ::  test-scry-clay-fail
-  ::  test-scry-clay-block
-  ::  test-scry-clay-live
-  ::  test-pinned-in-live
-  ::  test-live-build-that-blocks
-  ::  test-live-and-once
-  ::  test-live-two-deep
-  ::  test-live-three-deep
+  test-is-schematic-live
+  test-date-from-schematic
+  test-unify-jugs
+  test-dependency-wire-encoding
+  test-literal
+  test-autocons-same
+  test-autocons-different
+  test-scry-clay-succeed
+  test-scry-clay-fail
+  test-scry-clay-block
+  test-scry-clay-live
+  test-pinned-in-live
+  test-live-build-that-blocks
+  test-live-and-once
+  test-live-two-deep
+  test-live-three-deep
   test-live-triangle
-  ::  test-slim
-  ::  test-ride
-  ::  test-ride-scry-succeed
-  ::  test-ride-scry-fail
-  ::  test-ride-scry-block
-  ::  test-ride-scry-promote
-  ::test-five-oh-fora
-::  test-alts
+  test-slim
+  test-ride
+  test-ride-scry-succeed
+  test-ride-scry-fail
+  test-ride-scry-block
+  test-ride-scry-promote
+::  test-five-oh-fora
+  test-alts
 ==
 ++  test-is-schematic-live
   ~&  %test-is-schematic-live
@@ -663,8 +663,6 @@
 ++  test-live-triangle
   ~&  %test-live-triangle
   ::
-  =/  scry-type=type  [%atom %tas ~]
-  ::
   =/  scry-results=(map [term beam] cage)
     %-  my  :~
       :-  [%cx [[~nul %desk %da ~1234.5.6] /bar/foo]]
@@ -680,6 +678,7 @@
   =/  formula=hoon  (ream '`@tas`%constant')
   =/  subject-schematic=schematic:ford  [%scry %c %x [~nul %desk] /bar/foo]
   ::
+  =/  ride-type=type  [%atom %tas ~]
   =/  ride=schematic:ford  [%ride formula subject-schematic]
   =/  autocons=schematic:ford  [ride subject-schematic]
   ::
@@ -689,7 +688,7 @@
     %-  expect-eq  !>
     :-  moves
     :~  :*  duct=~[/ride]  %give  %made  ~1234.5.6  %complete  %result
-            [%result [%ride !>(%constant)]]
+            [%result [%ride ride-type %constant]]
             [%result [%scry %noun !>(%it-does-in-fact-matter)]]
         ==
         :*  duct=~  %pass  wire=/~nul/clay-sub/~nul/desk
@@ -710,7 +709,7 @@
     %-  expect-eq  !>
     :-  moves2
     :~  :*  duct=~[/ride]  %give  %made  ~1234.5.7  %complete  %result
-            [%result [%ride !>(%constant)]]
+            [%result [%ride ride-type %constant]]
             [%result [%scry %noun !>(%changed)]]
         ==
         :*  duct=~  %pass  wire=/~nul/clay-sub/~nul/desk
@@ -729,7 +728,6 @@
             %c  %warp  [~nul ~nul]  %desk  ~
     ==  ==
   =/  state  (~(got by state-by-ship.+>+<.ford) ~nul)
-  ~&  [%end-results (turn ~(tap in ~(key by results.state)) build-to-tape:ford)]
   ::
   %-  expect-eq  !>
   :-  state-by-ship.+>+<.ford
