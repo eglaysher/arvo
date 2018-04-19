@@ -30,7 +30,7 @@
   test-ride-scry-fail
   test-ride-scry-block
   test-ride-scry-promote
-::  test-five-oh-fora
+  ::  test-five-oh-fora
   test-alts
 ==
 ++  test-is-schematic-live
@@ -747,11 +747,24 @@
         [%slim subject-type formula]
     ==
   ::
+  %+  welp
+    %-  expect-eq  !>
+    :-  moves
+    :~  :*  duct=~[/dead]  %give  %made  ~1234.5.6  %complete
+            [%result [%slim (~(mint ut subject-type) [%noun formula])]]
+    ==  ==
+  ::
+  =.  ford  (ford now=~1234.5.7 eny=0xbeef.dead scry=scry-is-forbidden)
+  =^  moves2  ford
+    (call:ford [duct=~[/dead] type=~ %kill ~nul])
+  ::
+  %+  welp
+    %-  expect-eq  !>
+    [moves2 ~]
+  ::
   %-  expect-eq  !>
-  :-  moves
-  :~  :*  duct=~[/dead]  %give  %made  ~1234.5.6  %complete
-          [%result [%slim (~(mint ut subject-type) [%noun formula])]]
-  ==  ==
+  :-  state-by-ship.+>+<.ford
+  (my [~nul *ford-state:ford-turbo]~)
 ::
 ++  test-ride
   ~&  %test-ride
@@ -784,9 +797,22 @@
         [%result [%ride *type 5]]
     ==
   ::
+  %+  welp
+    %-  expect-eq  !>
+    :-  (~(nest ut &8:i.moves) | -:!>(*@))
+    &
+  ::
+  =.  ford  (ford now=~1234.5.7 eny=0xbeef.dead scry=scry-is-forbidden)
+  =^  moves2  ford
+    (call:ford [duct=~[/dead] type=~ %kill ~nul])
+  ::
+  %+  welp
+    %-  expect-eq  !>
+    [moves2 ~]
+  ::
   %-  expect-eq  !>
-  :-  (~(nest ut &8:i.moves) | -:!>(*@))
-  &
+  :-  state-by-ship.+>+<.ford
+  (my [~nul *ford-state:ford-turbo]~)
 ::
 ++  test-ride-scry-succeed
   ~&  %test-ride-scry-succeed
@@ -819,9 +845,22 @@
         [%result [%ride *type 42]]
     ==
   ::
+  %+  welp
+    %-  expect-eq  !>
+    :-  (~(nest ut &8:i.moves) | -:!>(*@))
+    &
+  ::
+  =.  ford  (ford now=~1234.5.7 eny=0xbeef.dead scry=scry-is-forbidden)
+  =^  moves2  ford
+    (call:ford [duct=~[/dead] type=~ %kill ~nul])
+  ::
+  %+  welp
+    %-  expect-eq  !>
+    [moves2 ~]
+  ::
   %-  expect-eq  !>
-  :-  (~(nest ut &8:i.moves) | -:!>(*@))
-  &
+  :-  state-by-ship.+>+<.ford
+  (my [~nul *ford-state:ford-turbo]~)
 ::
 ++  test-ride-scry-fail
   ~&  %test-ride-scry-fail
@@ -842,13 +881,26 @@
   ?>  ?=(^ moves)
   ?>  ?=([* %give %made @da %complete %error *] i.moves)
   ::
-  %-  expect-eq  !>
-  ::  compare the move to the expected move, omitting check on stack trace
+  %+  welp
+    %-  expect-eq  !>
+    ::  compare the move to the expected move, omitting check on stack trace
+    ::
+    :-  i.moves(|7 ~)
+    :*  duct=~[/dead]  %give  %made  ~1234.5.6  %complete
+        [%error [leaf+"ford: %ride failed:" ~]]
+    ==
   ::
-  :-  i.moves(|7 ~)
-  :*  duct=~[/dead]  %give  %made  ~1234.5.6  %complete
-      [%error [leaf+"ford: %ride failed:" ~]]
-  ==
+  =.  ford  (ford now=~1234.5.7 eny=0xbeef.dead scry=scry-is-forbidden)
+  =^  moves2  ford
+    (call:ford [duct=~[/dead] type=~ %kill ~nul])
+  ::
+  %+  welp
+    %-  expect-eq  !>
+    [moves2 ~]
+  ::
+  %-  expect-eq  !>
+  :-  state-by-ship.+>+<.ford
+  (my [~nul *ford-state:ford-turbo]~)
 ::
 ++  test-ride-scry-block
   ~&  %test-ride-scry-block
@@ -1182,8 +1234,26 @@
             %c  %warp  [~nul ~nul]  %first
             `[%mult [%da ~1234.5.8] (sy [%x /scry/one] ~)]
     ==  ==
-  ::
   `wall`~
+  ::  TODO: Fix all the ending state here.
+  ::
+  ::    Right now, we're leaving builds on %second in the state. This
+  ::    suggests that we aren't tracking something related to discs properly?
+  ::
+  ::  =.  ford  (ford now=~1234.5.9 eny=0xbeef.dead scry=scry-is-forbidden)
+  ::  =^  moves4  ford
+  ::    (call:ford [duct=~[/alts] type=~ %kill ~nul])
+  ::  ::
+  ::  %+  welp
+  ::    %-  expect-eq  !>
+  ::    :-  moves4
+  ::    :~  :*  duct=~  %pass  wire=/~nul/clay-sub/~nul/first
+  ::            %c  %warp  [~nul ~nul]  %first  ~
+  ::    ==  ==
+  ::  ::
+  ::  %-  expect-eq  !>
+  ::  :-  state-by-ship.+>+<.ford
+  ::  (my [~nul *ford-state:ford-turbo]~)
 ::
 ::  |utilities: helper arms
 ::
