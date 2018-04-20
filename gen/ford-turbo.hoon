@@ -30,7 +30,7 @@
   test-ride-scry-fail
   test-ride-scry-block
   test-ride-scry-promote
-  ::  test-five-oh-fora
+  test-five-oh-fora
   test-alts
 ==
 ++  test-is-schematic-live
@@ -1134,6 +1134,8 @@
   ::
   =^  moves5  ford  (call:ford [duct=~[/post-a] type=~ %kill ~nul])
   ::
+  =/  state  (~(got by state-by-ship.+>+<.ford) ~nul)
+  ~&  [%provisional-components (turn ~(tap in ~(key by sub-builds.provisional-components.state)) build-to-tape:ford)]
   %+  welp
     %-  expect-eq  !>
     :-  moves5

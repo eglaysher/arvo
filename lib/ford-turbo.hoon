@@ -1572,7 +1572,6 @@
       ::  if all subs are in old.rebuilds.state, promote ourselves
       ::
       ?:  (levy new-subs ~(has by old.rebuilds.state))
-        ~&  [%all-subs-same (build-to-tape build)]
         ::  link all :new-subs to :build in :components.state
         ::
         =.  state
@@ -1598,12 +1597,16 @@
           (welp unblocked-clients candidate-builds.state)
         ::
         ..execute
+      ::  all new-subs have results, some are not rebuilds
+      ::
+      =/  uncached-new-subs  (skip new-subs is-build-cached)
+      ?~  uncached-new-subs
+        ..execute(next-builds.state (~(put in next-builds.state) build))
       ::  record sub-builds as provisional
       ::
       ::    When we can't directly promote ourselves, we're going to rerun
       ::    our build. It's possible that the sub-builds are different, in
       ::    which case we'll need to clean up the current sub-build dependency.
-      ~&  [%raw-new-subs (turn new-subs build-to-tape)]
       =.  provisional-components.state
         %+  roll  `(list ^build)`new-subs
         |=  [new-sub=^build provisional-components=_provisional-components.state]
@@ -1615,11 +1618,6 @@
             client-builds
           (~(put ju client-builds.provisional-components) new-sub build)
         ==
-      ::  all new-subs have results, some are not rebuilds
-      ::
-      =/  uncached-new-subs  (skip new-subs is-build-cached)
-      ?~  uncached-new-subs
-        ..execute(next-builds.state (~(put in next-builds.state) build))
       ::  otherwise, not all new subs have results.
       ::
       ::    If all of our sub-builds finish immediately (i.e. promoted),
@@ -1650,7 +1648,6 @@
     ++  promote-build
       |=  [old-build=build date=@da]
       ^-  [(unit build) _..execute]
-      ~&  [%promote-build (build-to-tape old-build) date=date]
       ::
       =^  old-cache-line  results.state  (access-cache old-build)
       ::
@@ -1678,6 +1675,23 @@
         ::
             client-builds
           (~(put ju client-builds.components) new-sub new-build)
+        ==
+      ::  promoted builds are no longer provisional
+      ::
+      =.  provisional-components.state
+        %+  roll
+          =-  ~(tap in (fall - ~))
+          (~(get by sub-builds.provisional-components.state) new-build)
+        ::
+        |=  [old-sub=build provisional-components=_provisional-components.state]
+        ::
+        =/  new-sub=build  old-sub(date date)
+        %_    provisional-components
+            sub-builds
+          (~(del ju sub-builds.provisional-components) new-build new-sub)
+        ::
+            client-builds
+          (~(del ju client-builds.provisional-components) new-sub new-build)
         ==
       ::
       =.  state  (promote-live-listeners old-build new-build)
@@ -1915,8 +1929,6 @@
               client-builds
             (~(del ju client-builds.provisional-components) sub-build build.made)
           ==
-        ::
-        ::
         ::  clean up provisional builds: remove orphans
         ::
         ::    Any builds left in :provisional-components.state for our build
