@@ -1234,28 +1234,30 @@
         :*  duct=~  %pass  wire=/~nul/clay-sub/~nul/first
             %c  %warp  [~nul ~nul]  %first
             `[%mult [%da ~1234.5.8] (sy [%x /scry/one] ~)]
+        ==
+        :*  duct=~  %pass  wire=/~nul/clay-sub/~nul/second
+            %c  %warp  [~nul ~nul]  %second  ~
     ==  ==
-  `wall`~
-
   ::  TODO: Fix all the ending state here.
   ::
   ::    Right now, we're leaving builds on %second in the state. This
   ::    suggests that we aren't tracking something related to discs properly?
   ::
-  ::  =.  ford  (ford now=~1234.5.9 eny=0xbeef.dead scry=scry-is-forbidden)
-  ::  =^  moves4  ford
-  ::    (call:ford [duct=~[/alts] type=~ %kill ~nul])
-  ::  ::
-  ::  %+  welp
-  ::    %-  expect-eq  !>
-  ::    :-  moves4
-  ::    :~  :*  duct=~  %pass  wire=/~nul/clay-sub/~nul/first
-  ::            %c  %warp  [~nul ~nul]  %first  ~
-  ::    ==  ==
-  ::  ::
-  ::  %-  expect-eq  !>
-  ::  :-  state-by-ship.+>+<.ford
-  ::  (my [~nul *ford-state:ford-turbo]~)
+  ~&  %fourth-----------------fourth
+  =.  ford  (ford now=~1234.5.9 eny=0xbeef.dead scry=scry-is-forbidden)
+  =^  moves4  ford
+    (call:ford [duct=~[/alts] type=~ %kill ~nul])
+  ::
+  %+  welp
+    %-  expect-eq  !>
+    :-  moves4
+    :~  :*  duct=~  %pass  wire=/~nul/clay-sub/~nul/first
+            %c  %warp  [~nul ~nul]  %first  ~
+    ==  ==
+  ::
+  %-  expect-eq  !>
+  :-  state-by-ship.+>+<.ford
+  (my [~nul *ford-state:ford-turbo]~)
 ::
 ::  |utilities: helper arms
 ::

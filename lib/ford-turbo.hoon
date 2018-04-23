@@ -1413,33 +1413,67 @@
   ::
   ++  remove-listener-from-build
     |=  [=listener =build]
+    ~&  [%remove-listener-from-build listener (build-to-tape build)]
     ^+  state
-    %_    state
-        listeners
-      ::  remove mappings from :build and its sub-builds to :duct
-      ::
-      =/  builds=(list ^build)  ~[build]
-      ::
-      |-  ^+  listeners.state
-      ?~  builds  listeners.state
-      ::
-      =.  listeners.state
-        (~(del ju listeners.state) i.builds listener)
-      ::
-      =/  sub-builds  (~(get ju sub-builds.components.state) i.builds)
-      ::
-      =/  new-builds=(list ^build)
-        (drop (~(find-next by-schematic builds-by-schematic.state) i.builds))
-      ::
-      $(builds :(welp t.builds ~(tap in sub-builds) new-builds))
+    ::  ~&  [%all-listeners listeners.state]
     ::
-        ::  remove mapping from :duct to :build
-        ::
-        builds-by-listener
-      (~(del by builds-by-listener.state) duct.listener)
+    =?  state  (~(has ju root-builds.state) build listener)
+      %_    state
+          builds-by-listener
+        (~(del by builds-by-listener.state) duct.listener)
+      ::
+          root-builds
+        (~(del ju root-builds.state) build listener)
+      ==
     ::
-        root-builds
-      (~(del ju root-builds.state) build listener)
+    =/  original-build  build
+    =/  builds=(list ^build)  ~[build]
+    ::
+    |-  ^+  state
+    ?~  builds
+      state
+    ::
+    =.  build  i.builds
+    ::  are there any clients with this listener?
+    ::
+    =/  clients-with-listener=?
+      %+  lien
+        =-  ~(tap in -)
+        =/  clients=(set ^build)
+          (fall (~(get by client-builds.components.state) build) ~)
+        %-  ~(uni in clients)
+        (fall (~(get by client-builds.provisional-components.state) build) ~)
+      ::
+      |=  client=^build
+      =-  ~&([%check-client-has-listener (build-to-tape client) -] -)
+      (~(has ju listeners.state) client listener)
+    ::
+    ~&  [%clients-with-listener (build-to-tape build) clients-with-listener]
+    ::  when there are clients, don't remove the listener from this build
+    ::
+    ?:  clients-with-listener
+      $(builds t.builds)
+    ::
+    =.  listeners.state
+      (~(del ju listeners.state) build listener)
+    ::
+    =/  sub-builds  (~(get ju sub-builds.components.state) build)
+    ::
+    =/  provisional-sub-builds
+      (~(get ju sub-builds.provisional-components.state) build)
+    ::
+    =/  new-builds=(list ^build)
+      ?:  =(build original-build)  ~
+      (drop (~(find-next by-schematic builds-by-schematic.state) build))
+    ::
+    %_    $
+        builds
+      ;:  welp
+        t.builds
+        ~(tap in sub-builds)
+        ~(tap in provisional-sub-builds)
+        new-builds
+      ==
     ==
   ::  |construction: arms for performing builds
   ::
@@ -1495,7 +1529,7 @@
       ?~  candidate-builds.state
         ..execute
       ::
-      ~&  [%pre-gather-rebuilds (turn ~(tap in ~(key by old.rebuilds.state)) build-to-tape)]
+      ::  ~&  [%pre-gather-rebuilds (turn ~(tap in ~(key by old.rebuilds.state)) build-to-tape)]
       ::
       =/  next  i.candidate-builds.state
       =>  .(candidate-builds.state t.candidate-builds.state)
@@ -1648,6 +1682,7 @@
     ++  promote-build
       |=  [old-build=build date=@da]
       ^-  [(unit build) _..execute]
+      ::  ~&  [%promote-build (build-to-tape old-build) date]
       ::
       =^  old-cache-line  results.state  (access-cache old-build)
       ::
@@ -1658,6 +1693,14 @@
       =.  results.state  (~(put by results.state) new-build u.old-cache-line)
       ::
       =.  rebuilds.state  (link-rebuilds old-build new-build)
+      ::
+      =?    latest-by-disc.state
+          ?&  ?=(%scry -.schematic.old-build)
+              =/  disc  (extract-disc dependency.schematic.old-build)
+              (gth date (~(got by latest-by-disc.state) disc))
+          ==
+        =/  disc  (extract-disc dependency.schematic.old-build)
+        (~(put by latest-by-disc.state) disc date)
       ::
       ?>  (~(has ju builds-by-date.state) date.new-build schematic.new-build)
       ::
@@ -1825,6 +1868,7 @@
       ::
       ?-    -.result.made
           %build-result
+        ~&  [%build-result (build-to-tape build.made)]
         ::
         ?>  (~(has ju builds-by-date.state) date.build.made schematic.build.made)
         ::
@@ -1859,6 +1903,7 @@
           ?&  ?=([~ %result *] previous-result)
               =(build-result.result.made build-result.u.previous-result)
           ==
+        ~&  [?:(same-result %same %diff) (build-to-tape build.made)]
         ::
         =?    rebuilds.state
             same-result
@@ -1968,11 +2013,12 @@
           ~&  [%all-other-client-listeners all-other-client-listeners]
           ~&  [%orphaned-listeners orphaned-listeners]
           ::
-          =.  listeners.state
+          =.  state
             %+  roll  ~(tap in orphaned-listeners)
-            |=  [=listener listeners=_listeners.state]
+            |=  [=listener accumulator=_state]
+            =.  state  accumulator
             ::
-            (~(del ju listeners.state) sub-build listener)
+            (remove-listener-from-build listener sub-build)
           ::  remove the orphaned build from provisional builds
           ::
           =:  sub-builds.provisional-components.state
@@ -2003,6 +2049,7 @@
         $(state-diffs t.state-diffs)
       ::
           %blocks
+        ~&  [%blocks (build-to-tape build.made)]
         =?    moves
             ?=(^ scry-blocked.result.made)
           ::
@@ -2567,34 +2614,37 @@
       =-  ~(tap in `(set listener)`(fall - ~))
       (~(get by listeners.state) old)
     ::
+    =/  old-root-builds
+      ~(tap in (fall (~(get by root-builds.state) old) ~))
+    ::
     =.  state
-      %+  roll  old-live-listeners
+      %+  roll  old-root-builds
       |=  [=listener state=_state]
-      ::  if :listener ain't live, we wrote this wrong
       ::
-      ?>  live.listener
-      ::  move :listener off :previous-build onto :build
-      ::
+      ?.  (is-listener-live listener)
+        state
       %_    state
-          listeners
+      ::
+          root-builds
         =-  (~(put ju -) new listener)
-        (~(del ju listeners.state) old listener)
+        (~(del ju root-builds.state) old listener)
+      ::
+          builds-by-listener
+        (~(put by builds-by-listener.state) duct.listener [new &])
       ==
     ::
-    %+  roll  ~(tap in (fall (~(get by root-builds.state) old) ~))
-    |=  [=listener state=_state]
+    %+  roll  old-live-listeners
+    |=  [=listener accumulator=_state]
+    =.  state  accumulator
+    ::  if :listener ain't live, we wrote this wrong
     ::
-    ?.  (is-listener-live listener)
-      state
-    %_    state
+    ?>  live.listener
+    ~&  [%promote-live-listeners (build-to-tape old) (build-to-tape new)]
     ::
-        root-builds
-      =-  (~(put ju -) new listener)
-      (~(del ju root-builds.state) old listener)
+    =.  listeners.state  (~(put ju listeners.state) new listener)
+    ::  ~&  [%before-all-listeners listeners.state]
     ::
-        builds-by-listener
-      (~(put by builds-by-listener.state) duct.listener [new &])
-    ==
+    (remove-listener-from-build listener old)
   ::  +root-live-listeners: live listeners for which :build is the root build
   ::
   ++  root-live-listeners
@@ -2795,14 +2845,15 @@
             (~(has by old.rebuilds.state) build)
             (~(has by listeners.state) build)
         ==
-      ::  ~&  :*  %cleanup-no-op
-      ::          build=(build-to-tape build)
-      ::          has-client-builds=(~(has by client-builds.components.state) build)
-      ::          has-old-rebuilds=(~(has by old.rebuilds.state) build)
-      ::          listeners=(~(get by listeners.state) build)
-      ::      ==
+      ~&  :*  %cleanup-no-op
+              build=(build-to-tape build)
+              has-client-builds=(~(has by client-builds.components.state) build)
+              has-provisional=(~(has by client-builds.provisional-components.state) build)
+              has-old-rebuilds=(~(has by old.rebuilds.state) build)
+              listeners=(~(get by listeners.state) build)
+          ==
       this
-    ::  ~&  [%cleaning-up (build-to-tape build)]
+    ~&  [%cleaning-up (build-to-tape build)]
     ::  remove :build from :state, starting with its cache line
     ::
     =.  results.state  (~(del by results.state) build)
@@ -2845,6 +2896,7 @@
         ::
         =/  dates=(list @da)
           (fall (~(get by builds-by-schematic.state) schematic.build) ~)
+        ~&  [%should-delete-dependency-dates dates (build-to-tape build)]
         ?!
         %+  lien  dates
         |=  date=@da
@@ -2854,6 +2906,7 @@
           (fall (~(get by listeners.state) other-build) ~)
         ::
         (lien ~(tap in listeners) is-listener-live)
+      ~&  [%should-delete-dependency should-delete-dependency]
       ::
       =?  dependencies.state  should-delete-dependency
         (~(del ju dependencies.state) disc dependency)
