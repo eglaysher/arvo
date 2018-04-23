@@ -1597,11 +1597,6 @@
           (welp unblocked-clients candidate-builds.state)
         ::
         ..execute
-      ::  all new-subs have results, some are not rebuilds
-      ::
-      =/  uncached-new-subs  (skip new-subs is-build-cached)
-      ?~  uncached-new-subs
-        ..execute(next-builds.state (~(put in next-builds.state) build))
       ::  record sub-builds as provisional
       ::
       ::    When we can't directly promote ourselves, we're going to rerun
@@ -1618,6 +1613,11 @@
             client-builds
           (~(put ju client-builds.provisional-components) new-sub build)
         ==
+      ::  all new-subs have results, some are not rebuilds
+      ::
+      =/  uncached-new-subs  (skip new-subs is-build-cached)
+      ?~  uncached-new-subs
+        ..execute(next-builds.state (~(put in next-builds.state) build))
       ::  otherwise, not all new subs have results.
       ::
       ::    If all of our sub-builds finish immediately (i.e. promoted),
@@ -1948,42 +1948,34 @@
           ::    We want to find the listeners which shouldn't be there and
           ::    remove them.
           ::
-          =/  provisional-clients
-            =-  ~(tap in (fall - ~))
-            (~(get by client-builds.provisional-components.state) sub-build)
+          =/  provisional-client-listeners=(set listener)
+            (fall (~(get by listeners.state) build.made) ~)
           ::
-          =/  provisional-listeners=(set listener)
-            %+  roll  provisional-clients
-            |=  [=build provisional-listeners=(set listener)]
+          =/  all-other-client-listeners=(set listener)
+            %+  roll
+              =-  ~(tap in -)
+              =-  (~(del in -) build.made)
+              =-  (fall - ~)
+              (~(get by client-builds.provisional-components.state) sub-build)
+            |=  [=build listeners=(set listener)]
             ::
-            %-  ~(uni in provisional-listeners)
+            %-  ~(uni in listeners)
             (fall (~(get by listeners.state) build) ~)
           ::
-          ::  TODO: ~rovnys' plan wants to do additional checks with the
-          ::  provisional-listeners, but I'm skipping that for now, because
-          ::  I'm not entirely sure of it.
-          ::
-          ::  "To find these provisional listeners to delete, we gather the set
-          ::  of listeners  on the provisional client, and compare  that to the
-          ::  set of  listeners  unified from  the set  of  real clients.  Any
-          ::  listeners on  the  provisional  client that  are  not also  real
-          ::  listeners should be deleted from the build."
-          ::
-          ::  OK, but [duct ?] is the same on both. What happens in the diamond
-          ::  build case?
+          =/  orphaned-listeners
+            (~(dif in provisional-client-listeners) all-other-client-listeners)
+          ~&  [%provisional-client-listeners provisional-client-listeners]
+          ~&  [%all-other-client-listeners all-other-client-listeners]
+          ~&  [%orphaned-listeners orphaned-listeners]
           ::
           =.  listeners.state
-            %+  roll  ~(tap in provisional-listeners)
+            %+  roll  ~(tap in orphaned-listeners)
             |=  [=listener listeners=_listeners.state]
             ::
             (~(del ju listeners.state) sub-build listener)
-          ::
-          =.  ..execute  (cleanup sub-build)
           ::  remove the orphaned build from provisional builds
           ::
-          %_    ..execute
-          ::
-              sub-builds.provisional-components.state
+          =:  sub-builds.provisional-components.state
             %+  ~(del ju sub-builds.provisional-components.state)
               build.made
             sub-build
@@ -1993,6 +1985,8 @@
               sub-build
             build.made
           ==
+          ::
+          (cleanup sub-build)
         ::
         =?    ..execute
             ?=(^ previous-build)
@@ -2525,7 +2519,9 @@
     ^+  ..execute
     ::
     =/  kids=(list ^build)
-      ~(tap in (~(get ju sub-builds.components.state) build))
+      =-  ~(tap in -)
+      %-  ~(uni in (~(get ju sub-builds.components.state) build))
+      (~(get ju sub-builds.provisional-components.state) build)
     ::
     =.  components.state
       %_    components.state
@@ -2538,6 +2534,20 @@
           client-builds
         %+  roll  kids
         |=  [kid=^build clients=_client-builds.components.state]
+        (~(del ju clients) kid build)
+      ==
+    ::
+    =.  provisional-components.state
+      %_    provisional-components.state
+      ::  remove the mapping from :build to its sub-builds
+      ::
+          sub-builds
+        (~(del by sub-builds.provisional-components.state) build)
+      ::  for each +build in :kids, remove :build from its clients
+      ::
+          client-builds
+        %+  roll  kids
+        |=  [kid=^build clients=_client-builds.provisional-components.state]
         (~(del ju clients) kid build)
       ==
     ::
@@ -2781,6 +2791,7 @@
     ::  if something depends on this build, no-op and return
     ::
     ?:  ?|  (~(has by client-builds.components.state) build)
+            (~(has by client-builds.provisional-components.state) build)
             (~(has by old.rebuilds.state) build)
             (~(has by listeners.state) build)
         ==
