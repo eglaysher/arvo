@@ -1245,7 +1245,7 @@
 ::
 ++  by-build-dag
   |_  dag=build-dag
-  ::  +put: add a :build linkage bidirectionally
+  ::  +put: add a linkage between a :client and a :sub +build
   ::
   ++  put
     |=  [client=build sub=build]
@@ -1254,8 +1254,34 @@
       sub-builds     (~(put ju sub-builds.dag) client sub)
       client-builds  (~(put ju client-builds.dag) sub client)
     ==
+  ::  +del: delete a linkage between a :client and a :sub +build
+  ::
+  ++  del
+    |=  [client=build sub=build]
+    ^+  dag
+    %_  dag
+      sub-builds     (~(del ju sub-builds.dag) client sub)
+      client-builds  (~(del ju client-builds.dag) sub client)
+    ==
+  ::  +del-build: remove all linkages containing :build
+  ::
+  ++  del-build
+    |=  =build
+    ^+  dag
+    ::
+    %_    dag
+      ::  remove the mapping from :build to its sub-builds
+      ::
+          sub-builds
+        (~(del by sub-builds.dag) build)
+      ::  for each +build in :kids, remove :build from its clients
+      ::
+          client-builds
+        %+  roll  ~(tap in (~(get ju sub-builds.dag) build))
+        |=  [kid=^build clients=_client-builds.dag]
+        (~(del ju clients) kid build)
+      ==
   --
-
 ::  +per-event: per-event core
 ::
 ++  per-event
@@ -1713,13 +1739,7 @@
         |=  [old-sub=build provisional-components=_provisional-components.state]
         ::
         =/  new-sub=build  old-sub(date date)
-        %_    provisional-components
-            sub-builds
-          (~(del ju sub-builds.provisional-components) new-build new-sub)
-        ::
-            client-builds
-          (~(del ju client-builds.provisional-components) new-sub new-build)
-        ==
+        (~(del by-build-dag provisional-components) new-build new-sub)
       ::  send mades for the currently existing listeners before we add more
       ::
       =.  ..execute  (send-mades new-build (root-live-listeners new-build))
@@ -1960,13 +1980,7 @@
                   provisional-components=_provisional-components.state
               ==
           ::
-          %_    provisional-components
-              sub-builds
-            (~(del ju sub-builds.provisional-components) build.made sub-build)
-          ::
-              client-builds
-            (~(del ju client-builds.provisional-components) sub-build build.made)
-          ==
+          (~(del by-build-dag provisional-components) build.made sub-build)
         ::  clean up provisional builds: remove orphans
         ::
         ::    Any builds left in :provisional-components.state for our build
@@ -2011,16 +2025,10 @@
             (remove-listener-from-build listener sub-build)
           ::  remove the orphaned build from provisional builds
           ::
-          =:  sub-builds.provisional-components.state
-            %+  ~(del ju sub-builds.provisional-components.state)
+          =.  provisional-components.state
+            %+  ~(del by-build-dag provisional-components.state)
               build.made
             sub-build
-          ::
-              client-builds.provisional-components.state
-            %+  ~(del ju client-builds.provisional-components.state)
-              sub-build
-            build.made
-          ==
           ::
           (cleanup sub-build)
         ::
@@ -2517,13 +2525,7 @@
       ::
       |=  [client=^build blocked-builds=_blocked-builds.state]
       ::
-      %_    blocked-builds
-          sub-builds
-        (~(del ju sub-builds.blocked-builds) client build)
-      ::
-          client-builds
-        (~(del ju client-builds.blocked-builds) build client)
-      ==
+      (~(del by-build-dag blocked-builds) client build)
     ::
     :_  state
     ::
@@ -2565,32 +2567,10 @@
       (~(get ju sub-builds.provisional-components.state) build)
     ::
     =.  components.state
-      %_    components.state
-      ::  remove the mapping from :build to its sub-builds
-      ::
-          sub-builds
-        (~(del by sub-builds.components.state) build)
-      ::  for each +build in :kids, remove :build from its clients
-      ::
-          client-builds
-        %+  roll  kids
-        |=  [kid=^build clients=_client-builds.components.state]
-        (~(del ju clients) kid build)
-      ==
+      (~(del-build by-build-dag components.state) build)
     ::
     =.  provisional-components.state
-      %_    provisional-components.state
-      ::  remove the mapping from :build to its sub-builds
-      ::
-          sub-builds
-        (~(del by sub-builds.provisional-components.state) build)
-      ::  for each +build in :kids, remove :build from its clients
-      ::
-          client-builds
-        %+  roll  kids
-        |=  [kid=^build clients=_client-builds.provisional-components.state]
-        (~(del ju clients) kid build)
-      ==
+      (~(del-build by-build-dag provisional-components.state) build)
     ::
     %+  roll  kids
     |=  [kid=^build accumulator=_..execute]
