@@ -1985,6 +1985,7 @@
           |=  $:  sub-build=build
                   provisional-components=_provisional-components.state
               ==
+          ~&  [%used (build-to-tape build.made)]
           ::
           %_    provisional-components
               sub-builds
@@ -2028,6 +2029,9 @@
           ::
           =/  orphaned-listeners
             (~(dif in provisional-client-listeners) all-other-client-listeners)
+          ~&  [%provisioanl-listeners provisional-client-listeners]
+          ~&  [%all-other-client-listeners all-other-client-listeners]
+          ~&  [%orphaned-listeners orphaned-listeners]
           ::
           =.  state
             %+  roll  ~(tap in orphaned-listeners)
