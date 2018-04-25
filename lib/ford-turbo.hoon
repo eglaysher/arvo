@@ -765,28 +765,14 @@
       ::    The first of the two jugs maps from a build to its sub-builds.
       ::    The second of the two jugs maps from a build to its client builds.
       ::
-      $=  components
-      $:  ::  sub-builds: jug from a build to its sub-builds
-          ::
-          sub-builds=(jug build build)
-          ::  client-builds: jug from a build to its client builds
-          ::
-          client-builds=(jug build build)
-      ==
+      components=build-dag
       ::  provisional-components: expected linkage we can't prove yet
       ::
       ::    During the +gather step, we promote builds, but our promotion
       ::    decisions may be wrong. We record our predictions here so we
       ::    can undo them.
       ::
-      $=  provisional-components
-      $:  ::  sub-builds: jug from a build to its sub-builds
-          ::
-          sub-builds=(jug build build)
-          ::  client-builds: jug from a build to its client builds
-          ::
-          client-builds=(jug build build)
-      ==
+      provisional-components=build-dag
       ::  rebuilds: bidirectional links between old and new identical builds
       ::
       ::    Old and new build must have the same schematic and result.
@@ -811,14 +797,7 @@
       candidate-builds=(list build)
       ::  blocked builds: mappings between blocked and blocking builds
       ::
-      $=  blocked-builds
-      $:  ::  sub-builds: key is client, value is sub-build
-          ::
-          sub-builds=(jug build build)
-          ::  client-builds: key is sub-build, value is client
-          ::
-          client-builds=(jug build build)
-      ==
+      blocked-builds=build-dag
   ::
   ::  build request tracking
   ::
@@ -857,6 +836,16 @@
       ::    that formal date.
       ::
       dependency-updates=(jug @da dependency)
+  ==
+::  +build-dag: a directed acyclic graph of builds
+::
++=  build-dag
+  $:  ::  sub-builds: jug from a build to its sub-builds
+      ::
+      sub-builds=(jug build build)
+      ::  client-builds: jug from a build to its client builds
+      ::
+      client-builds=(jug build build)
   ==
 ::  +build: a referentially transparent request for a build.
 ::
@@ -1252,6 +1241,21 @@
       `[i.dates schematic.build]
     $(dates t.dates)
   --
+::  +by-build-dag: door for manipulating a :build-dag
+::
+++  by-build-dag
+  |_  dag=build-dag
+  ::  +put: add a :build linkage bidirectionally
+  ::
+  ++  put
+    |=  [client=build sub=build]
+    ^+  dag
+    %_  dag
+      sub-builds     (~(put ju sub-builds.dag) client sub)
+      client-builds  (~(put ju client-builds.dag) sub client)
+    ==
+  --
+
 ::  +per-event: per-event core
 ::
 ++  per-event
@@ -1615,13 +1619,7 @@
           ::
           |=  [new-sub=^build state=_state]
           ::
-          %_    state
-              sub-builds.components
-            (~(put ju sub-builds.components.state) build new-sub)
-          ::
-              client-builds.components
-            (~(put ju client-builds.components.state) new-sub build)
-          ==
+          state(components (~(put by-build-dag components.state) build new-sub))
         ::
         =^  wiped-rebuild  ..execute  (promote-build u.old-build date.build)
         =?    next-builds.state
@@ -1643,13 +1641,7 @@
         %+  roll  `(list ^build)`new-subs
         |=  [new-sub=^build provisional-components=_provisional-components.state]
         ::
-        %_    provisional-components
-            sub-builds
-          (~(put ju sub-builds.provisional-components) build new-sub)
-        ::
-            client-builds
-          (~(put ju client-builds.provisional-components) new-sub build)
-        ==
+        (~(put by-build-dag provisional-components) build new-sub)
       ::  all new-subs have results, some are not rebuilds
       ::
       =/  uncached-new-subs  (skip new-subs is-build-cached)
@@ -1664,13 +1656,7 @@
         %+  roll  `(list ^build)`uncached-new-subs
         |=  [new-sub=^build blocked-builds=_blocked-builds.state]
         ::
-        %_    blocked-builds
-            sub-builds
-          (~(put ju sub-builds.blocked-builds) build new-sub)
-        ::
-            client-builds
-          (~(put ju client-builds.blocked-builds) new-sub build)
-        ==
+        (~(put by-build-dag blocked-builds) build new-sub)
       ::
       %_    ..execute
           candidate-builds.state
@@ -1716,13 +1702,7 @@
         |=  [old-sub=build components=_components.state]
         ::
         =/  new-sub=build  old-sub(date date)
-        %_    components
-            sub-builds
-          (~(put ju sub-builds.components) new-build new-sub)
-        ::
-            client-builds
-          (~(put ju client-builds.components) new-sub new-build)
-        ==
+        (~(put by-build-dag components) new-build new-sub)
       ::  promoted builds are no longer provisional
       ::
       =.  provisional-components.state
@@ -1861,11 +1841,8 @@
             builds-by-schematic
           (~(put by-schematic builds-by-schematic.state) sub-build)
         ::
-            sub-builds.components
-          (~(put ju sub-builds.components.state) build.made sub-build)
-        ::
-            client-builds.components
-          (~(put ju client-builds.components.state) sub-build build.made)
+            components
+          (~(put by-build-dag components.state) build.made sub-build)
         ::
             listeners
           ::
@@ -1962,11 +1939,8 @@
               next-builds
             (~(put in next-builds.state) client)
           ::
-              client-builds.provisional-components
-            (~(put ju client-builds.provisional-components.state) build.made client)
-          ::
-              sub-builds.provisional-components
-            (~(put ju sub-builds.provisional-components.state) client build.made)
+              provisional-components
+            (~(put by-build-dag provisional-components.state) client build.made)
           ::
               builds-by-date
             (~(put ju builds-by-date.state) date.client schematic.client)
@@ -2110,11 +2084,8 @@
             state
           ::
           %_    state
-              sub-builds.blocked-builds
-            (~(put ju sub-builds.blocked-builds.state) build.made block)
-          ::
-              client-builds.blocked-builds
-            (~(put ju client-builds.blocked-builds.state) block build.made)
+              blocked-builds
+            (~(put by-build-dag blocked-builds.state) build.made block)
           ::
               candidate-builds
             [block candidate-builds.state]
