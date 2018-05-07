@@ -159,6 +159,59 @@
   ::  used in other files: bond, drop (but only once)
   ::  unusued: clap
   --
+++  slit
+  ::  null terminated backwards list
+  ::
+  ::    normal lists are cheap to push items to the front, but we also want a
+  ::    type which is cheap to push items to the back. one common problem is
+  ::    forgetting to reverse a list where we were pushing the last item to the
+  ::    front. +slit lets us rely on the type system so we have a different list
+  ::    with a different shape for back insertion lists
+  ::
+  |*(a=mold $@($~ [t=(slit a) i=a]))
+::
+++  sl
+  ::  backwards list
+  ::
+  |%
+  ::  +homo: homogenize +slit
+  ::
+  ++  homo
+    |*  a=(slit)
+    ^+  =<  $
+      |%  +-  $  ?:(*? ~ [t=$ i=(nags 0 a)])
+      --
+    a
+  ::  +size: length of the slit
+  ::
+  ++  size
+    |=  a=(slit)
+    =|  b=@u
+    ^-  @u
+    |-
+    ?~  a
+      b
+    $(a t.a, b +(b))
+  ::  +nags: index into list from the back
+  ::
+  ++  nags
+    |*  {a/@ b/(slit)}
+    |-  ^+  ?>(?=(^ b) i.b)
+    ?~  b
+      ~_  leaf+"nags-fail"
+      !!
+    ?:  =(0 a)  i.b
+    $(b t.b, a (dec a))
+  ::
+  ++  to-list
+    |*  a=(slit @ud)
+    =>  .(a (homo a))
+    =+  b=`(list _i.+.a)`~
+    ^+  b
+    |-
+    ?~  a  b
+    $(a t.a, b [i.a b])
+  --
 ++  ls
   ::  we are back to a basic problem here: when we try to pass lists without
   ::  {i} and {t} faces, we have to use {-} and {+} to access the structure of
